@@ -1,3 +1,4 @@
+import collections
 import typing
 
 import mpdloop
@@ -5,20 +6,20 @@ import sys
 
 from asyncio import CancelledError
 from types import coroutine
+from abc import ABCMeta, abstractmethod
 
 LOOP = sys.intern('loop')
 TIME = sys.intern('time')
 SUBSYS = sys.intern('subsys')
 MESSAGE = sys.intern('message')
 FUTURE = sys.intern('future')
-CANCEL = sys.intern('cancel')
 
 
 class TaskNotDone(Exception):
     pass
 
 
-class _FutureMixIn:
+class _BaseFuture(metaclass=ABCMeta):
     def __init__(self, loop: mpdloop.MPDLoop = None):
         self._loop = loop
         self._done = False
@@ -50,6 +51,11 @@ class _FutureMixIn:
             raise self._exception
         return self._result
 
+    def exception(self):
+        if not self._done:
+            raise TaskNotDone
+        return self._exception
+
     def __await__(self):
         if not self._done:
             yield FUTURE, self
@@ -61,13 +67,17 @@ class _FutureMixIn:
     def is_complete(self):
         return self._done
 
+    @abstractmethod
+    def cancel(self):
+        pass
 
-class Task(_FutureMixIn):
+
+class Task(_BaseFuture):
     def __init__(self, coro, loop: mpdloop.MPDLoop):
         super().__init__(loop)
         self._coro = type(coro).__await__(coro)
         self._waiter = loop.call_soon(0, self._callback)
-        self._waiting_on_future = None
+        self._waiting_on_future: typing.Optional[_BaseFuture] = None
 
     def _callback(self, arg=None, is_exception=False):
         # When called by subsystem_waiter or channel_waiter, arg is the list of subsystems that were modified.
@@ -103,7 +113,7 @@ class Task(_FutureMixIn):
         elif type_ == MESSAGE:
             self._waiter = self._loop.add_channel_waiter(arg, self._callback)
         elif type_ == FUTURE:
-            arg: _FutureMixIn
+            arg: _BaseFuture
             self._waiting_on_future = arg
             arg.add_done_callback(self._callback)
 
@@ -114,12 +124,13 @@ class Task(_FutureMixIn):
             self._loop.cancel(self._waiter)
             self._waiter = None
         if self._waiting_on_future:
-            self._waiting_on_future.remove_done_callback(self._callback)
+            self._waiting_on_future.cancel()
+            #self._waiting_on_future.remove_done_callback(self._callback)
             self._waiting_on_future = None
         self._loop.call_soon(0, self._callback, CancelledError, True)
 
 
-class Future(_FutureMixIn):
+class Future(_BaseFuture):
     def set_result(self, result):
         if self._done:
             raise ValueError("Can't set the result of a future that's already done")
@@ -138,6 +149,11 @@ class Future(_FutureMixIn):
         self._exception = exc
         self._mark_done()
 
+    def cancel(self):
+        if self._done:
+            return
+        self.set_exception(CancelledError)
+
 #
 # class sleep:
 #     __slots__ = ['delay']
@@ -155,6 +171,9 @@ def sleep(seconds):
 
 @coroutine
 def get_event_loop() -> typing.Awaitable[mpdloop.MPDLoop]:
+    """Returns the event loop running the current task.
+    Unlike the other asynchronous methods, this does *not* yield to the event loop.
+    """
     return (yield LOOP, None)
 
 @coroutine
@@ -190,4 +209,64 @@ class ChannelMessages:
                 return m.pop(0)
             yield MESSAGE, self.channel
 
+
+class Lock:
+    # I copied pretty much 100% of this code from asyncio, but I figured out what it did before I did so and commented
+    # it with my understandings, just so I understood it.
+    def __init__(self):
+        self._locked = False
+        self._waiters: typing.Deque[Future] = collections.deque()
+
+    @property
+    def locked(self):
+        return self._locked
+
+    def acquire_nowait(self):
+        # a waiter can be cancelled, or have some exception or other thrown into it, in which case waking it up
+        # wouldn't accomplish anything.
+        # on the other hand, if a waiter has a result (i.e. it was woken up), and the event loop hasn't run it yet,
+        # then it's about to wake up and acquire the lock and we have to wait in line.
+        if not self._locked and all(waiter.is_complete and isinstance(waiter.exception(), CancelledError)
+                                    for waiter in self._waiters):
+            self._waiters.clear()
+            self._locked = True
+            return True
+        return False
+
+    async def acquire(self):
+        if self.acquire_nowait():
+            return True
+
+        while self._locked:
+            loop = await get_event_loop()
+            waiter = Future(loop)
+            if self._waiters is None:
+                self._waiters = collections.deque()
+            self._waiters.append(waiter)
+            try:
+                await waiter
+            except CancelledError:
+                if not self._locked:
+                    # We were unlucky enough to get woken up at the same time we were cancelled.
+                    # Pass the baton to the next acquirer waiting in line.
+                    self._wakeup_next()
+                raise
+            # It should not be possible for waiting on this future to raise any exception other than CancelledError.
+            # If it does, it's a serious error, which should crash the program.
+        self._locked = True
+        return True
+
+    def release(self):
+        if not self._locked:
+            raise RuntimeError("attempt to release a lock that was never acquired")
+        self._locked = False
+        self._wakeup_next()
+
+    def _wakeup_next(self):
+        if self._waiters:
+            next_future = self._waiters.popleft()
+            # if the next future is complete already, either it was already hit and will wake up on the next cycle
+            # of the event loop, or it was cancelled and waking it up 
+            if not next_future.is_complete:
+                next_future.set_result(True)
 
