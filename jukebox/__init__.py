@@ -224,12 +224,13 @@ class Display:
                     # get all listeners on the current screen that listen for this button being held for at least 0
                     # seconds, and fire them.
                     if self._screen is not None:
-                        for event, func in self._screen.events.items():
+                        for event, funcs in self._screen.events.items():
                             # each event is a 2-tuple of the button and how many seconds it must be held
                             # (0 means as soon as it is pressed)
                             # a hold time of -1 means call when the button is released
                             if event[0] == pressed_button and event[1] >= 0:
-                                self._button_hold_handles.append(self._loop.call_later(event[1], func))
+                                for func in funcs:
+                                    self._button_hold_handles.append(self._loop.call_later(event[1], func))
                 else:
                     if self._pressed_button is not None and self._screen is not None:
                         for handle in self._button_hold_handles:
