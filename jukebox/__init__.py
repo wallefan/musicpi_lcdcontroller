@@ -28,8 +28,8 @@ class LCD:
         self.d5 = d5
         self.d6 = d6
         self.d7 = d7
+        self._enable_delay = 0.0000001
 
-        self._enable_delay = 0.001
         self._lcd_write(bytes([
             0x33,
             0x32,
@@ -38,8 +38,6 @@ class LCD:
             0b00101000,  # init
             0b00000001,  # clear.
         ]), False)
-        #self._enable_delay = 0.0000001
-        self._enable_delay = 0.0001
 
         gpio.setup(bl_red, gpio.OUT)
         gpio.setup(bl_green, gpio.OUT)
