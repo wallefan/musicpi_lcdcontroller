@@ -39,6 +39,7 @@ class Directory(BaseScreen):
             for i in range(16):
                 lcd._lcd_write(b'<'[0], True)
                 time.sleep(0.025)
+            time.sleep(0.2)
             lcd._lcd_write(0b110, False)  # restore cursor move direction to right
             self.disallow_popups = False
             self.display.switch_screen(self.parent)
@@ -47,12 +48,14 @@ class Directory(BaseScreen):
             for i in range(16):
                 lcd._lcd_write(b'>'[0], True)
                 time.sleep(0.025)
+            time.sleep(0.2)
             self.disallow_popups = False
             self.display.switch_screen(self.children[self.cursor][1])
 
     def on_switched_to(self):
         self.display.clear()
         self.display.write(0, b'  '+self.name.encode('ascii'))
+        self.cursor = 0
         self.show()
 
     def show(self):
