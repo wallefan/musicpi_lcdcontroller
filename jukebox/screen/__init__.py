@@ -1,3 +1,5 @@
+import types
+
 from ..util import Buttons
 
 
@@ -26,17 +28,23 @@ class ScreenMeta(type):
     def __init__(cls, name, bases, ns):
         super().__init__(name, bases, ns)
         # inherit events from parent classes
-        events = cls.events.copy() if hasattr(cls, 'events') else {}
+        events = cls._class_events.copy() if hasattr(cls, '_class_events') else {}
         for func in ns.values():
             # not *all* of these are going to be functions, obviously, but the ones that have this attribute are
             if hasattr(func, 'musicpi_trigger_events'):
                 for evt in func.musicpi_trigger_events:
                     events.setdefault(evt, []).append(func)
-        cls.events = events
+        cls._class_events = events
 
 
 class BaseScreen(metaclass=ScreenMeta):
     disallow_popups = False
+
+    def __init__(self):
+        events = {}
+        for k, v in self._class_events.items():
+            events[k] = [types.MethodType(func, self) for func in v]
+        self.events = events
 
     def on_switched_to(self):
         pass
@@ -44,6 +52,7 @@ class BaseScreen(metaclass=ScreenMeta):
 
 class Screen(BaseScreen):
     def __init__(self, display, next_screen: BaseScreen):
+        super().__init__()
         self.display = display
         self.next_screen = next_screen
 
