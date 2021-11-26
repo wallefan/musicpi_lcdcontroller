@@ -21,7 +21,6 @@ class LCD:
         gpio.setup(d6, gpio.OUT)
         gpio.setup(d7, gpio.OUT)
         gpio.output(e, True)
-        time.sleep(0.05)
 
         self.rs = rs
         self.e = e
@@ -30,6 +29,7 @@ class LCD:
         self.d6 = d6
         self.d7 = d7
 
+        self._enable_delay = 0.001
         self._lcd_write(bytes([
             0x33,
             0x32,
@@ -38,6 +38,7 @@ class LCD:
             0b00101000,  # init
             0b00000001,  # clear.
         ]), False)
+        self._enable_delay = 0.0000001
 
         gpio.setup(bl_red, gpio.OUT)
         gpio.setup(bl_green, gpio.OUT)
@@ -95,9 +96,9 @@ class LCD:
         # besides, we really shouldn't be handing control back to the event loop *while* writing data to the screen
         # if the loop actually decides to wake up and invoke another subroutine during that time, it's going to
         # confuse the heck out of the user
-        time.sleep(0.0000001)
+        time.sleep(self._enable_delay)
         gpio.output(self.e, False)
-        time.sleep(0.0000001)
+        time.sleep(self._enable_delay)
         gpio.output(self.e, True)
 
     def write(self, column: int, text: bytes):
