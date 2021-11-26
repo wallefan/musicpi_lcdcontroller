@@ -5,6 +5,7 @@ import time
 
 class Directory(BaseScreen):
     def __init__(self, name: str, parent):
+        super().__init__()
         self.name = name
         self.children = []
         if isinstance(parent, Directory):
