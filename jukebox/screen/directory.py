@@ -51,8 +51,13 @@ class Directory(BaseScreen):
             self.display.switch_screen(self.children[self.cursor][1])
 
     def on_switched_to(self):
+        print('switched to menu', self.name)
         self.display.clear()
+        time.sleep(0.5)
+        print('asdf')
         self.display.write(0, b'  '+self.name.encode('ascii'))
+        time.sleep(0.5)
+        print('asdf')
         self.show()
 
     def show(self):
