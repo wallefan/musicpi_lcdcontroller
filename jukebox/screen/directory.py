@@ -35,11 +35,11 @@ class Directory(BaseScreen):
         self.disallow_popups = True
         lcd = self.display.lcd
         if self.cursor == -1:
-            lcd._lcd_write(bytes([0xD0, 0b10000]), False) # set cursor to second line, column 16, set move direction to left
+            lcd._lcd_write(bytes([0xD0, 0b100]), False)  # set cursor to second line, column 16, set move direction to left
             for i in range(16):
                 lcd._lcd_write(b'<'[0], True)
                 time.sleep(0.025)
-            lcd._lcd_write(0b10100, False) # restore cursor move direction to right
+            lcd._lcd_write(0b101, False) # restore cursor move direction to right
             self.disallow_popups = False
             self.display.switch_screen(self.parent)
         else:
