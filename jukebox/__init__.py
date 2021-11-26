@@ -95,6 +95,7 @@ class LCD:
         # besides, we really shouldn't be handing control back to the event loop *while* writing data to the screen
         # if the loop actually decides to wake up and invoke another subroutine during that time, it's going to
         # confuse the heck out of the user
+        gpio.output(self.e, True)
         time.sleep(self._enable_delay)
         gpio.output(self.e, False)
         time.sleep(self._enable_delay)
@@ -238,7 +239,7 @@ class Display:
                         for handle in self._button_hold_handles:
                             # the button is no longer being held; cancel any that were waiting for it to be held longer
                             handle.cancel()
-                        for func in self._screen.events.get((self._pressed_button, -1)):
+                        for func in self._screen.events.get((self._pressed_button, -1), []):
                             func()
             self._pressed_button = pressed_button
 
