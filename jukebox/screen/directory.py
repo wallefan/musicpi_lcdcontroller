@@ -10,7 +10,7 @@ class Directory(BaseScreen):
         self.children = []
         if isinstance(parent, Directory):
             self.parent = parent
-            self.screen = parent.screen
+            self.display = parent.display
             parent.children.append((name, self))
         elif isinstance(parent, Display):
             self.screen = parent
