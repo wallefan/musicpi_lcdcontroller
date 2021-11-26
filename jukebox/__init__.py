@@ -28,7 +28,7 @@ class LCD:
         self.d5 = d5
         self.d6 = d6
         self.d7 = d7
-        self._enable_delay = 0.00001
+        self._enable_delay = 0.001
 
         self._lcd_write(bytes([
             0x33,
