@@ -21,6 +21,7 @@ class LCD:
         gpio.setup(d6, gpio.OUT)
         gpio.setup(d7, gpio.OUT)
         gpio.output(e, True)
+        time.sleep(0.05)
 
         self.rs = rs
         self.e = e
