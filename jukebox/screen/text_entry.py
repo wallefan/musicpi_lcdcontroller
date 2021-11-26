@@ -1,12 +1,12 @@
-import main
-from util import Buttons
+from .. import main
+from jukebox.util import Buttons
 from . import BaseScreen, on_button_pressed
 
 CHARACTERS = b' abcdefghijklmnopqrstuvwxyz'
 
 class TextInputScreen(BaseScreen):
     disallow_popups = True
-    def __init__(self, display:main.Display, legal_characters=b' abcdefghijklmnopqrstuvwxyz'):
+    def __init__(self, display: main.Display, legal_characters=b' abcdefghijklmnopqrstuvwxyz'):
         self.display = display
         self.entered_text = b''
         self.current_character = b'a'[0]

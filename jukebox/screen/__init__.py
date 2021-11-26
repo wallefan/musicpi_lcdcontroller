@@ -1,4 +1,4 @@
-from util import Buttons
+from ..util import Buttons
 
 
 def on_button_held(button:Buttons, time:float):

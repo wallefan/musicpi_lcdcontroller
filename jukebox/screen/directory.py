@@ -1,5 +1,6 @@
-from main import Display
-from screen import BaseScreen, Buttons, on_button_pressed
+from .. import Display
+from ..screen import BaseScreen, on_button_pressed
+from ..util import Buttons
 import time
 
 class Directory(BaseScreen):
@@ -51,6 +52,7 @@ class Directory(BaseScreen):
     def on_switched_to(self):
         self.display.clear()
         self.display.write(0, b'  '+self.name.encode('ascii'))
+        self.show()
 
     def show(self):
         if self.cursor >= len(self.children):
@@ -59,6 +61,6 @@ class Directory(BaseScreen):
             self.cursor = -1
         if self.cursor == -1 and self.parent is None:
             self.cursor = 0
-        if
+        self.display.write(64, self.children[self.cursor][0].ljust(16).encode('ascii'))
 
 
