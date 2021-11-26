@@ -13,8 +13,8 @@ class Directory(BaseScreen):
             self.display = parent.display
             parent.children.append((name, self))
         elif isinstance(parent, Display):
-            self.screen = parent
             self.display = parent
+            self.parent = None
         else:
             raise TypeError
         self.cursor = 0
@@ -38,7 +38,7 @@ class Directory(BaseScreen):
             lcd._lcd_write(bytes(0xD0, 0b10000), False) # set cursor to second line, column 16, set move direction to left
             for i in range(16):
                 lcd._lcd_write(b'<'[0], True)
-                time.sleep(0.005)
+                time.sleep(0.05)
             lcd._lcd_write(0b10100, False) # restore cursor move direction to right
             self.disallow_popups = False
             self.screen.switch_screen(self.parent)
@@ -46,7 +46,7 @@ class Directory(BaseScreen):
             lcd._lcd_write(0xC0, False)
             for i in range(16):
                 lcd._lcd_write(b'>'[0], True)
-                time.sleep(0.005)
+                time.sleep(0.05)
             self.disallow_popups = False
             self.screen.switch_screen(self.children[self.cursor][1])
 

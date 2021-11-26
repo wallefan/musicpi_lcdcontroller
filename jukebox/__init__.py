@@ -20,6 +20,7 @@ class LCD:
         gpio.setup(d5, gpio.OUT)
         gpio.setup(d6, gpio.OUT)
         gpio.setup(d7, gpio.OUT)
+        gpio.output(e, True)
 
         self.rs = rs
         self.e = e

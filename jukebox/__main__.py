@@ -27,4 +27,5 @@ if __name__ == '__main__':
         display.mainloop()  # run one iteration of the main loop and schedule the next one
         asyncio.get_event_loop().run_forever()
     finally:
+        gpio.output(display.lcd.e, True)
         gpio.cleanup()
