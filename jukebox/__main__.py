@@ -14,7 +14,7 @@ if __name__ == '__main__':
             bl_red=18, bl_green=17, bl_blue=4  # backlight
             ),
         MCP3008(spi=SpiDev(0, 0)),
-        RotaryEncoder(19, 20),
+        RotaryEncoder(19, 16),
         rotary_switch=21,
     )
     try:
@@ -24,6 +24,7 @@ if __name__ == '__main__':
         sub_menu.children.append(('Test', test))
         display.switch_screen(main_menu)
         display.lcd.set_color(1, 1)
+        display.mainloop()  # run one iteration of the main loop and schedule the next one
         asyncio.get_event_loop().run_forever()
     finally:
         gpio.cleanup()
