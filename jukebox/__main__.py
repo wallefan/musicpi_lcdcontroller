@@ -24,7 +24,7 @@ if __name__ == '__main__':
         sub_menu  = Directory('Sub Menu', main_menu)
         class TestScreen(Screen):
             def on_switched_to(self):
-                self.display.set_color(0.16, 1)
+                self.display.lcd.set_color(0.16, 1)
         test = TestScreen(display, sub_menu)
         sub_menu.children.append(('Test', test))
         display.switch_screen(main_menu)
