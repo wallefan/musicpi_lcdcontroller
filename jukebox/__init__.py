@@ -2,7 +2,8 @@ import colorsys
 import time
 from typing import Union, Tuple
 
-from RPi import GPIO as gpio
+import pigpio
+from pigpio import INPUT, OUTPUT, PUD_UP, EITHER_EDGE
 import asyncio
 from Adafruit_MCP3008 import MCP3008
 
@@ -13,14 +14,16 @@ BACKLIGHT_PWM_HZ = 5000
 
 
 class LCD:
-    def __init__(self, rs, e, d4, d5, d6, d7, bl_red, bl_green, bl_blue):
-        gpio.setup(rs, gpio.OUT)
-        gpio.setup(e, gpio.OUT)
-        gpio.setup(d4, gpio.OUT)
-        gpio.setup(d5, gpio.OUT)
-        gpio.setup(d6, gpio.OUT)
-        gpio.setup(d7, gpio.OUT)
-        gpio.output(e, True)
+    def __init__(self, pi: pigpio.pi, rs, e, d4, d5, d6, d7, bl_red, bl_green, bl_blue):
+        pi.set_mode(rs, OUTPUT)
+        pi.set_mode(e, OUTPUT)
+        pi.set_mode(d4, OUTPUT)
+        pi.set_mode(d5, OUTPUT)
+        pi.set_mode(d6, OUTPUT)
+        pi.set_mode(d7, OUTPUT)
+        pi.write(e, True)
+
+        self.pi = pi
 
         self.rs = rs
         self.e = e
@@ -31,35 +34,40 @@ class LCD:
         self._enable_delay = 0.001
 
         self._lcd_write(bytes([
-            0x33,
-            0x32,
             0b00000110,  # cursor move direction (move right, do not shift display)
             0b00001100,  # display on, cursor off, blink off
             0b00101000,  # init
             0b00000001,  # clear.
         ]), False)
 
-        gpio.setup(bl_red, gpio.OUT)
-        gpio.setup(bl_green, gpio.OUT)
-        gpio.setup(bl_blue, gpio.OUT)
+        pi.set_mode(bl_red, OUTPUT)
+        pi.set_mode(bl_green, OUTPUT)
+        pi.set_mode(bl_blue, OUTPUT)
+        pi.set_PWM_frequency(bl_red, 5000)
+        pi.set_PWM_frequency(bl_green, 5000)
+        pi.set_PWM_frequency(bl_blue, 5000)
+        pi.set_PWM_range(bl_red, 1000)
+        pi.set_PWM_range(bl_green, 1000)
+        pi.set_PWM_range(bl_blue, 1000)
+        
+        self.bl_red = bl_red
+        self.bl_green = bl_green
+        self.bl_blue = bl_blue
 
         self.backlight_brightness = 1  # 0 to 1 float.
 
-        self.red = gpio.PWM(bl_red, BACKLIGHT_PWM_HZ)
-        self.green = gpio.PWM(bl_green, BACKLIGHT_PWM_HZ)
-        self.blue = gpio.PWM(bl_blue, BACKLIGHT_PWM_HZ)
-        self.red.start(100)
-        self.green.start(100)
-        self.blue.start(100)
         self.lock = asyncio.Lock()
 
     def set_color(self, hue, saturation):
         """Set the color of the display backlight using HSV.
         """
+        # The backlight is a 3-wire RGB LED with common anode, which I have wired to the Pi's 3.3V rail.
+        # Therefore, outputting a solid on signal (3.3V) will turn the color completely off, and a solid off signal (0V)
+        # will sink current through the Pi and turn the LED on.
         r, g, b = colorsys.hsv_to_rgb(hue, saturation, self.backlight_brightness)
-        self.red.ChangeDutyCycle(100 - r * 100)
-        self.green.ChangeDutyCycle(100 - g * 100)
-        self.blue.ChangeDutyCycle(100 - b * 100)
+        self.pi.set_PWM_dutycycle(self.bl_red,   1000 - r * 1000)
+        self.pi.set_PWM_dutycycle(self.bl_green, 1000 - g * 1000)
+        self.pi.set_PWM_dutycycle(self.bl_blue,  1000 - b * 1000)
 
     def set_backlight_brightness(self, brightness):
         """Change the backlight brightness.  This will not take effect until the next time set_color() is invoked.
@@ -68,26 +76,26 @@ class LCD:
         self.backlight_brightness = brightness
 
     def backlight_off(self):
-        self.red.ChangeDutyCycle(100)
-        self.green.ChangeDutyCycle(100)
-        self.blue.ChangeDutyCycle(100)
+        self.pi.set_PWM_dutycycle(self.bl_red, 1000)
+        self.pi.set_PWM_dutycycle(self.bl_green, 1000)
+        self.pi.set_PWM_dutycycle(self.bl_blue, 1000)
 
     def _lcd_write(self, data, rs):
         # assert self.lock.locked()
-        gpio.output(self.rs, rs)
+        self.pi.write(self.rs, rs)
         if not isinstance(data, bytes):
             data = bytes([data])
         for d in data:
-            gpio.output(self.e, True)
-            gpio.output(self.d4, bool(d & 0x10))
-            gpio.output(self.d5, bool(d & 0x20))
-            gpio.output(self.d6, bool(d & 0x40))
-            gpio.output(self.d7, bool(d & 0x80))
+            self.pi.write(self.e, True)
+            self.pi.write(self.d4, bool(d & 0x10))
+            self.pi.write(self.d5, bool(d & 0x20))
+            self.pi.write(self.d6, bool(d & 0x40))
+            self.pi.write(self.d7, bool(d & 0x80))
             self._toggle_enable()
-            gpio.output(self.d4, bool(d & 0x01))
-            gpio.output(self.d5, bool(d & 0x02))
-            gpio.output(self.d6, bool(d & 0x04))
-            gpio.output(self.d7, bool(d & 0x08))
+            self.pi.write(self.d4, bool(d & 0x01))
+            self.pi.write(self.d5, bool(d & 0x02))
+            self.pi.write(self.d6, bool(d & 0x04))
+            self.pi.write(self.d7, bool(d & 0x08))
             self._toggle_enable()
 
     def _toggle_enable(self):
@@ -95,11 +103,11 @@ class LCD:
         # besides, we really shouldn't be handing control back to the event loop *while* writing data to the screen
         # if the loop actually decides to wake up and invoke another subroutine during that time, it's going to
         # confuse the heck out of the user
-        gpio.output(self.e, True)
+        self.pi.write(self.e, True)
         time.sleep(self._enable_delay)
-        gpio.output(self.e, False)
+        self.pi.write(self.e, False)
         time.sleep(self._enable_delay)
-        gpio.output(self.e, True)
+        self.pi.write(self.e, True)
 
     def write(self, column: int, text: bytes):
         self._lcd_write(column | 0x80, False)
@@ -110,21 +118,24 @@ class LCD:
 
 
 class RotaryEncoder:
-    def __init__(self, a, b):
+    def __init__(self, pi: pigpio.pi, a, b):
+        self.pi = pi
         self.a = a
         self.b = b
-        gpio.setup(a, gpio.IN, gpio.PUD_UP)
-        gpio.setup(b, gpio.IN, gpio.PUD_UP)
+        pi.set_mode(a, INPUT)
+        pi.set_pull_up_down(a, PUD_UP)
+        pi.set_mode(b, INPUT)
+        pi.set_pull_up_down(b, PUD_UP)
         self.reset()
-        gpio.add_event_detect(a, gpio.BOTH, self.on_transition)
-        gpio.add_event_detect(b, gpio.BOTH, self.on_transition)
+        pi.callback(a, EITHER_EDGE, self.on_transition)
+        pi.callback(b, EITHER_EDGE, self.on_transition)
 
     def reset(self):
         self._last_a_state = True
         self._last_b_state = True
         # if the encoder isn't already in a "notch" (i.e. neither of the contacts are closed), set _settling to True
         # this will cause all encoder ticks to be ignored until the encoder settles.
-        self._settling = not (gpio.input(self.a) and gpio.input(self.b))
+        self._settling = not (self.pi.read(self.a) and self.pi.read(self.b))
         self._count = 0
         self._pressed_time = None
 
@@ -138,8 +149,8 @@ class RotaryEncoder:
         # I could mitigate this by adding a capacitor debounce circuit, but 1) that's effort and 2) that takes perfboard
         # space I don't have.  This problem really only presents itself when the knob is turned *very* slowly, so
         # I may just not worry about it and just implement a software fix.
-        a = gpio.input(self.a)
-        b = gpio.input(self.b)
+        a = self.pi.read(self.a)
+        b = self.pi.read(self.b)
         if self._settling:
             if a and b:  # wait for the encoder to settle to (1,1), i.e. one of the tactile notches
                 self._settling = False
@@ -171,13 +182,25 @@ class ScreenReservation:
 
 
 class Display:
-    def __init__(self, lcd: LCD, adc: MCP3008, rotary_encoder: RotaryEncoder, rotary_switch: int,
+    def __init__(self, pi: pigpio.pi, lcd: LCD, rotary_encoder: RotaryEncoder, rotary_switch: int,
+                 buttons_adc_channel,
+                 adc_spi_channel:int = None,
+                 adc_miso: int = None, adc_mosi: int = None, adc_cs: int = None, adc_sck: int = None,
                  loop: asyncio.BaseEventLoop = None):
+        self.pi = pi
         self.lcd = lcd
-        self.adc = adc
+        if adc_spi_channel is not None:
+            self.adc = pi.spi_open(adc_spi_channel, 1000000, pigpio.SPI_MODE_0)
+            self.hwspi = True
+        else:
+            pi.bb_spi_open(adc_cs, adc_miso, adc_mosi, adc_sck, 1000000, pigpio.SPI_MODE_0)
+            self.adc = adc_cs
+            self.hwspi = False
+        self.buttons_channel = buttons_adc_channel
         self.rotary_encoder = rotary_encoder
         self.rotary_encoder_switch = rotary_switch
-        gpio.setup(rotary_switch, gpio.IN, gpio.PUD_UP)
+        pi.set_mode(rotary_switch, INPUT)
+        pi.set_pull_up_down(rotary_switch, PUD_UP)
         self._loop = loop or asyncio.get_event_loop()
         self._screen: BaseScreen = None
         self._pressed_button = None
@@ -188,14 +211,28 @@ class Display:
         self._screen_text = bytearray(b' ' * 128)
         self._screen_reservations: list[ScreenReservation] = []
 
+    def _adc_read(self, channel):
+        assert 0 <= channel <= 7
+        # I had started to copy this routine from the Adafruit implementation, then realized they did it really weirdly
+        # and arguably wrongly so i just copied the implementation in the MCP3008 datasheet and it seems to work fine
+        # and also looks a lot cleaner.
+
+        # start bit, top bit of second byte = read single channel, followed by 3 bits of channel, then 12 blank times
+        # for the analog read to come back
+        if self.hwspi:
+            _, hi, lo = self.pi.spi_xfer(self.adc, [0x01, 0x80 | channel << 4, 0x00])[1]
+        else:
+            _, hi, lo = self.pi.bb_spi_xfer(self.adc, [0x01, 0x80 | channel << 4, 0x00])[1]
+        return (hi & 0b11) << 8 | lo
+
     def poll_switches(self):
-        if not gpio.input(self.rotary_encoder_switch):
+        if not self.pi.read(self.rotary_encoder_switch):
             # rotary knob is pushed in
             pass
         else:
             # rotary is not pressed
             pass
-        adc_reading = self.adc.read_adc(2)
+        adc_reading = self._adc_read(self.buttons_channel)
         if adc_reading < 5:
             pressed_button = None
         elif 335 < adc_reading < 350:
