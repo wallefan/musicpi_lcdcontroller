@@ -33,10 +33,30 @@ class LCD:
         self.d7 = d7
         self._enable_delay = 0.001
 
+        # LCD init sequence
+        # 00110000 - set 8 bit interface (which we're not using, but the LCD needs to have that set at startup
+        # to initialize properly for some reason)
+        pi.write(rs,0)
+        pi.write(d7,0)
+        pi.write(d6,0)
+        pi.write(d5,1)
+        pi.write(d4,1)
+        self._toggle_enable()
+        time.sleep(0.005)
+        self._toggle_enable()
+        time.sleep(0.0001)
+        self._toggle_enable()
+        time.sleep(0.0001)
+        self._toggle_enable()
+        time.sleep(0.0001)
+        pi.write(d4, 0)  # change the nibble we're sending to 0010 to set the interface to 4 bit.
+        self._toggle_enable()
+
+        # initialize the LCD for real
         self._lcd_write(bytes([
+            0b00101000,  # init
             0b00000110,  # cursor move direction (move right, do not shift display)
             0b00001100,  # display on, cursor off, blink off
-            0b00101000,  # init
             0b00000001,  # clear.
         ]), False)
 
