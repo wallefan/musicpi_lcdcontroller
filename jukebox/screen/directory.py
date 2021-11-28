@@ -51,6 +51,7 @@ class Directory(BaseScreen):
             self.display.switch_screen(self.children[self.cursor][1])
 
     def on_switched_to(self):
+        self.display.lcd.set_color(0, 0)  # set display to white (hue 0 saturation 0)
         self.display.clear()
         self.display.write(0, b'  '+self.name.encode('ascii'))
         self.cursor = 0
