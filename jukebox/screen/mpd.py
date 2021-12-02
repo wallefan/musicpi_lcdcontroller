@@ -149,5 +149,12 @@ class NowPlaying(Screen):
         await self.mpdclient.send_command('random', str(new_random))
         await self.on_status_change()
 
+    @on_button_pressed(Buttons.REPEAT)
+    async def toggle_repeat(self):
+        new_repeat = (self._repeat_state + 1) % 3
+        await self.mpdclient.send_command('repeat', '1' if new_repeat >= 1 else '0')
+        await self.mpdclient.send_command('single', '1' if new_repeat == 2 else '0')
+        await self.on_status_change()
+
 
 
