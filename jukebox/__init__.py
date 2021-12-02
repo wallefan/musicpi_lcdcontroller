@@ -1,4 +1,5 @@
 import colorsys
+import inspect
 import time
 from typing import Union, Tuple
 
@@ -228,6 +229,7 @@ class Display:
         self._last_fire_time = None
         self._screen_local_handles = []  # handles (from loop.call_later()) that must be cleared when we switch screens
         self._button_hold_handles = [] # handles (from loop.call_later()) that must be cleared when a button is released
+        self._screen_switch_task = None  # asyncio.Task from Screen.on_switched_to() being a coro
         self._screen_text = bytearray(b' ' * 128)
         self._screen_reservations: list[ScreenReservation] = []
 
@@ -244,6 +246,11 @@ class Display:
         else:
             _, hi, lo = self.pi.bb_spi_xfer(self.adc, [0x01, 0x80 | channel << 4, 0x00])[1]
         return (hi & 0b11) << 8 | lo
+
+    def _schedule_if_coro(self, func, *args):
+        result = func(*args)
+        if inspect.iscoroutine(result):
+            self._screen_local_handles.append(self._loop.create_task(result))
 
     def poll_switches(self):
         if not self.pi.read(self.rotary_encoder_switch):
@@ -290,14 +297,16 @@ class Display:
                             # a hold time of -1 means call when the button is released
                             if event[0] == pressed_button and event[1] >= 0:
                                 for func in funcs:
-                                    self._button_hold_handles.append(self._loop.call_later(event[1], func))
+                                    self._button_hold_handles.append(self._loop.call_later(event[1],
+                                                                                           self._schedule_if_coro, func))
                 else:
                     if self._pressed_button is not None and self._screen is not None:
                         for handle in self._button_hold_handles:
                             # the button is no longer being held; cancel any that were waiting for it to be held longer
                             handle.cancel()
+                        held_time = time.monotonic() - self._button_pressed_time
                         for func in self._screen.events.get((self._pressed_button, -1), []):
-                            func()
+                            self._schedule_if_coro(func, held_time)
             self._pressed_button = pressed_button
 
         if self._screen is not None and pressed_button is not None:
@@ -363,5 +372,7 @@ class Display:
             handle.cancel()
         self._screen_local_handles.clear()
         self._screen = new_screen
-        new_screen.on_switched_to()
+        result = new_screen.on_switched_to()
+        if inspect.iscoroutine(result):
+            self._screen_local_handles.append(self._loop.create_task(result))
 

@@ -1,6 +1,7 @@
 import asyncio
 from typing import *
 import re
+__all__ = ['Client', 'MPDError']
 
 
 class Client(asyncio.Protocol):

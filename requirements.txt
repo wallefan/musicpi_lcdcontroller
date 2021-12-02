@@ -1,1 +1,2 @@
-aiompd
+ruamel.yaml
+yt-dlp

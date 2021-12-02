@@ -1,3 +1,5 @@
+import asyncio
+
 from .. import Display
 from ..screen import BaseScreen, on_button_pressed
 from ..util import Buttons
@@ -31,7 +33,7 @@ class Directory(BaseScreen):
 
     @on_button_pressed(Buttons.PAUSE)
     @on_button_pressed(Buttons.ENCODER)
-    def enter(self):
+    async def enter(self):
         self.disallow_popups = True
         lcd = self.display.lcd
         if self.cursor == -1:
@@ -39,14 +41,14 @@ class Directory(BaseScreen):
             self.display.write(114, self.children[self.cursor][0])
             for i in range(16):
                 lcd._lcd_write(0b11100, False)
-                time.sleep(0.1)
+                await asyncio.sleep(0.1)
             self.disallow_popups = False
             self.display.switch_screen(self.parent)
         else:
             self.display.write(18, self.children[self.cursor][0])
             for i in range(16):
                 lcd._lcd_write(0b11000, False)
-                time.sleep(0.1)
+                await asyncio.sleep(0.1)
             self.disallow_popups = False
             self.display.switch_screen(self.children[self.cursor][1])
 
