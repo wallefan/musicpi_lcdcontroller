@@ -1,6 +1,7 @@
 from jukebox import Display, RotaryEncoder, LCD
 from jukebox.screen import Screen
 from jukebox.screen.directory import Directory
+from jukebox.screen.mpd import NowPlaying
 import pigpio
 from Adafruit_GPIO.SPI import SpiDev
 from Adafruit_MCP3008 import MCP3008
@@ -28,7 +29,9 @@ if __name__ == '__main__':
                 self.display.lcd.set_color(0.5, 1)
         test = TestScreen(display, sub_menu)
         sub_menu.children.append(('Test', test))
-        display.switch_screen(main_menu)
+        now_playing = NowPlaying(display, main_menu)
+        main_menu.children.append(('Now Playing', now_playing))
+        display.switch_screen(now_playing)
         display.mainloop()  # run one iteration of the main loop and schedule the next one
         asyncio.get_event_loop().run_forever()
     finally:

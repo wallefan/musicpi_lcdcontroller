@@ -104,7 +104,7 @@ class LCD:
     def _lcd_write(self, data, rs):
         # assert self.lock.locked()
         self.pi.write(self.rs, rs)
-        if not isinstance(data, bytes):
+        if isinstance(data, int):
             data = bytes([data])
         for d in data:
             self.pi.write(self.e, True)
@@ -133,6 +133,13 @@ class LCD:
     def write(self, column: int, text: bytes):
         self._lcd_write(column | 0x80, False)
         self._lcd_write(text, True)
+
+    def upload_custom_chars(self, chars, offset=0):
+        assert 0 <= offset < 8
+        assert isinstance(chars, bytes)
+        assert len(chars) % 8 == 0, "Custom characters must be in multiples of 8 bytes"
+        self._lcd_write(0x40 + offset*8, False)
+        self._lcd_write(chars, True)
 
     def clear(self):
         self._lcd_write(0x01, False)
@@ -233,6 +240,15 @@ class Display:
         self._screen_text = bytearray(b' ' * 128)
         self._screen_reservations: list[ScreenReservation] = []
 
+    # if we don't do this, after a few times rerunning the script, pigpiod will run out of resources and stop giving us
+    # a new handle, and must be restarted
+    # apparently pi.stop() does not do this implicitly
+    def __del__(self):
+        if self.hwspi:
+            self.pi.spi_close(self.adc)
+        else:
+            self.pi.bb_spi_close(self.adc)
+
     def _adc_read(self, channel):
         assert 0 <= channel <= 7
         # I had started to copy this routine from the Adafruit implementation, then realized they did it really weirdly
@@ -250,7 +266,16 @@ class Display:
     def _schedule_if_coro(self, func, *args):
         result = func(*args)
         if inspect.iscoroutine(result):
-            self._screen_local_handles.append(self._loop.create_task(result))
+            task = self._loop.create_task(result)
+            self._screen_local_handles.append(task)
+            task.add_done_callback(self._report_failure)
+
+    def _report_failure(self, fut):
+        try:
+            fut.exception()
+        except:
+            import traceback
+            traceback.print_exc()
 
     def poll_switches(self):
         if not self.pi.read(self.rotary_encoder_switch):
@@ -322,16 +347,16 @@ class Display:
         splits = [slice(0, len(text))]
         for res in self._screen_reservations:
             for i, split in enumerate(splits):
-                if (res.first_col <= split.start < res.last_col) \
-                        or (res.first_col <= split.stop < res.last_col):
+                if (res.first_col <= split.stop + column) \
+                        and (res.last_col >= split.start + column):
                     break
             else:
                 continue
             split = splits.pop(i)
-            if split.start < res.first_col:
-                splits.append(slice(split.start, res.first_col))
-            if split.stop > res.last_col:
-                splits.append(slice(res.last_col, split.stop))
+            if split.start < res.first_col - column:
+                splits.append(slice(split.start, res.first_col - column))
+            if split.stop > res.last_col - column:
+                splits.append(slice(res.last_col - column, split.stop))
 
         for split in splits:
             self.lcd.write(column + split.start, text[split])
@@ -339,7 +364,7 @@ class Display:
 
     def clear(self):
         self.lcd.clear()
-
+        self._screen_text = bytearray(b' ' * 128)
 
     def mainloop(self):
         self.poll_switches()
@@ -359,10 +384,23 @@ class Display:
     def show_popup(self, column, text: Union[str, bytes], duration: float, force_color=None):
         if self._screen is not None and self._screen.disallow_popups:
             return False
+        new_res = ScreenReservation(column, column + len(text), duration, force_color)
+
         if isinstance(text, str):
             text = text.encode('ascii')
+
+        i = 0
+        while i < len(self._screen_reservations):
+            res = self._screen_reservations[i]
+            if res.first_col < new_res.last_col and res.last_col >= new_res.first_col:
+                del self._screen_reservations[i]
+                self.lcd.write(res.first_col, self._screen_text[res.first_col:res.last_col])
+                continue
+            else:
+                i += 1
+
         self.lcd.write(column, text)
-        self._screen_reservations.append(ScreenReservation(column, column + len(text), duration, force_color))
+        self._screen_reservations.append(new_res)
 
     def switch_screen(self, new_screen: BaseScreen):
         for handle in self._button_hold_handles:
