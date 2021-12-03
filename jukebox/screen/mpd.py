@@ -95,6 +95,12 @@ class NowPlaying(Screen):
     async def on_switched_to(self):
         self.display.lcd.upload_custom_chars(CUSTOM_CHARACTERS)
         self.display.lcd.clear()
+        # set all these to None so that when on_status_change() compares them to the previous values to see if they've
+        # changed, they always show as changed.
+        self._song_title = None
+        self._shuffle_state = None
+        self._repeat_state = None
+        self._status = None
         await self.on_status_change()
         while True:
             for subsys in await self.mpdclient.idle('player', 'playlist', 'options'):
@@ -232,6 +238,16 @@ class NowPlaying(Screen):
     @on_button_pressed(Buttons.PAUSE)
     async def play_pause(self):
         await self.mpdclient.send_command('pause')
+        await self.on_status_change()
+
+    @on_button_pressed(Buttons.NEXT)
+    async def next(self):
+        await self.mpdclient.send_command('next')
+        await self.on_status_change()
+
+    @on_button_pressed(Buttons.PREVIOUS)
+    async def next(self):
+        await self.mpdclient.send_command('previous')
         await self.on_status_change()
 
     @on_button_pressed(Buttons.SHUFFLE)
