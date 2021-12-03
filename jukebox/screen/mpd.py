@@ -1,3 +1,4 @@
+import asyncio
 import posixpath
 import pprint
 import urllib.parse
@@ -86,9 +87,9 @@ class NowPlaying(Screen):
         self._repeat_state = 0
         self._song_title = None
         self._song_scroll_callback = None
-        self._playback_time = None   # Will be the amount of time into the song (when paused)
-                                     # or what time.monotonic() was when the song started (when playing)
-        self._state = None
+        self._playback_start_time = None   # what time.monotonic() was (computed) when the current song started playing
+        self._update_timer_callback = None
+        self._status = None
         self._config = {'text wrap gap':5}
 
     async def on_switched_to(self):
@@ -103,7 +104,7 @@ class NowPlaying(Screen):
                     await self.on_playlist_change()
 
     async def on_status_change(self):
-        status = dict(await self.mpdclient.send_command('status'))
+        status = self._status = dict(await self.mpdclient.send_command('status'))
 
         if status['playlist'] != self._playlist_ver:
             await self.on_playlist_change()
@@ -128,19 +129,25 @@ class NowPlaying(Screen):
         else:
             title = None
         if title != self._song_title:
-            if self._song_scroll_callback is not None and not self._song_scroll_callback.finished():
+            if self._song_scroll_callback is not None:
                 self._song_scroll_callback.cancel()
             self._song_scroll_callback = None
             self._song_title = title
             if title is not None:
                 self._song_scroll(0)
 
+        if self._update_timer_callback:
+            self._update_timer_callback.cancel()
+            self._update_timer_callback = None
         if status['state'] == 'play':
             duration = float(status['duration'])
             elapsed = float(status['elapsed'])
             self.display.write(0, '\x00 %2d:%02d / %d:%02d' % (elapsed // 60, int(elapsed % 60),
                                                                duration // 60, int(duration % 60)))
-            # TODO show playback timer
+            self._playback_start_time = time.monotonic() - elapsed
+            # arrange for update_timer to be called precisely at the start of the next integer second.
+            # (and kind of just hope that asyncio's clock doesn't drift too terribly much...)
+            self._update_timer_callback = self.display.call_later(1 - elapsed % 1, self._update_timer)
         elif status['state'] == 'pause':
             duration = float(status['duration'])
             elapsed = float(status['elapsed'])
@@ -162,8 +169,6 @@ class NowPlaying(Screen):
                 self.display.show_popup(3, string, 2)
         self._shuffle_state = shuffle_state
         self._repeat_state = repeat_state
-
-
 
     async def on_playlist_change(self):
         if self._playlist_ver is None:
@@ -200,7 +205,6 @@ class NowPlaying(Screen):
 
         assert None not in self._playlist
 
-
     def _song_scroll(self, offset):
         gap = self._config['text wrap gap']
         if len(self._song_title) < 16:
@@ -216,6 +220,14 @@ class NowPlaying(Screen):
         # TODO make this scroll delay configurable
         self._song_scroll_callback = self.display.call_later(1.5 if offset == 0 else 0.5, self._song_scroll,
                                                              (offset + 1) % (len(self._song_title) + gap))
+
+    def _update_timer(self):
+        elapsed = time.monotonic() - self._playback_start_time
+        self.display.write(2, '%2d:%02d' % (elapsed // 60, int(elapsed % 60)))
+        # call time.monotonic() again because, when running remote, writing to the display
+        # actually takes a significant amount of time lol
+        self._update_timer_callback = self.display.call_later(1 - (time.monotonic() - self._playback_start_time) % 1,
+                                                              self._update_timer)
 
     @on_button_pressed(Buttons.PAUSE)
     async def play_pause(self):
