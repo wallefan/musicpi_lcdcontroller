@@ -90,7 +90,7 @@ class NowPlaying(Screen):
         self._playback_start_time = None   # what time.monotonic() was (computed) when the current song started playing
         self._update_timer_callback = None
         self._status = None
-        self._config = {'text wrap gap':5}
+        self._config = {'text wrap gap': 5}
 
     async def on_switched_to(self):
         self.display.lcd.upload_custom_chars(CUSTOM_CHARACTERS)
@@ -145,20 +145,18 @@ class NowPlaying(Screen):
         if self._update_timer_callback:
             self._update_timer_callback.cancel()
             self._update_timer_callback = None
-        if status['state'] == 'play':
-            duration = float(status['duration'])
+        print(status)
+        if status['state'] in ('play', 'pause'):
+            duration = float(status['duration']) if 'duration' in status else None
             elapsed = float(status['elapsed'])
-            self.display.write(0, '\x00 %2d:%02d / %d:%02d' % (elapsed // 60, int(elapsed % 60),
-                                                               duration // 60, int(duration % 60)))
-            self._playback_start_time = time.monotonic() - elapsed
-            # arrange for update_timer to be called precisely at the start of the next integer second.
-            # (and kind of just hope that asyncio's clock doesn't drift too terribly much...)
-            self._update_timer_callback = self.display.call_later(1 - elapsed % 1, self._update_timer)
-        elif status['state'] == 'pause':
-            duration = float(status['duration'])
-            elapsed = float(status['elapsed'])
-            self.display.write(0, '\x01 %2d:%02d / %d:%02d' % (elapsed // 60, int(elapsed % 60),
-                                                               duration // 60, int(duration % 60)))
+            self.display.write(0, '%s %2d:%02d / ' % ('\x00' if status['state'] == 'play' else '\x01',
+                                                             elapsed // 60, int(elapsed % 60)) +
+                               ('%d:%02d' % (duration // 60, int(duration % 60))) if duration else '??:??')
+            if status['state'] == 'play':
+                self._playback_start_time = time.monotonic() - elapsed
+                # arrange for update_timer to be called precisely at the start of the next integer second.
+                # (and kind of just hope that asyncio's clock doesn't drift too terribly much...)
+                self._update_timer_callback = self.display.call_later(1 - elapsed % 1, self._update_timer)
         elif status['state'] == 'stop':
             self.display.write(0, '\x02  Stopped      ')
 
@@ -167,7 +165,7 @@ class NowPlaying(Screen):
         if shuffle_state != self._shuffle_state:
             self.display.show_popup(3, 'Shuffle On' if shuffle_state else 'Shuffle Off', 2)
         if repeat_state != self._repeat_state:
-            string = ('Repeat Off','Repeat All','Repeat One')[repeat_state]
+            string = ('Repeat Off', 'Repeat All', 'Repeat One')[repeat_state]
             if shuffle_state != self._shuffle_state:
                 # if both things change show the popups sequentially
                 self._loop.call_later(1.9, self.display.show_popup, 3, string, 2)
