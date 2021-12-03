@@ -145,13 +145,12 @@ class NowPlaying(Screen):
         if self._update_timer_callback:
             self._update_timer_callback.cancel()
             self._update_timer_callback = None
-        print(status)
         if status['state'] in ('play', 'pause'):
             duration = float(status['duration']) if 'duration' in status else None
             elapsed = float(status['elapsed'])
             self.display.write(0, '%s %2d:%02d / ' % ('\x00' if status['state'] == 'play' else '\x01',
                                                              elapsed // 60, int(elapsed % 60)) +
-                               ('%d:%02d' % (duration // 60, int(duration % 60))) if duration else '??:??')
+                               ('%d:%02d' % (duration // 60, int(duration % 60)) if duration else '??:??'))
             if status['state'] == 'play':
                 self._playback_start_time = time.monotonic() - elapsed
                 # arrange for update_timer to be called precisely at the start of the next integer second.
