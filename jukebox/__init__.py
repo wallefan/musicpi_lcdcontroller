@@ -6,7 +6,6 @@ from typing import Union, Tuple
 import pigpio
 from pigpio import INPUT, OUTPUT, PUD_UP, EITHER_EDGE
 import asyncio
-from Adafruit_MCP3008 import MCP3008
 
 from .screen import BaseScreen
 from .util import Buttons
@@ -270,12 +269,13 @@ class Display:
             self._screen_local_handles.append(task)
             task.add_done_callback(self._report_failure)
 
-    def _report_failure(self, fut):
-        try:
-            fut.exception()
-        except:
-            import traceback
-            traceback.print_exc()
+    def _report_failure(self, fut: asyncio.Future):
+        if not fut.cancelled():
+            exc = fut.exception()
+            print(exc)
+            if exc:
+                import traceback
+                traceback.print_exception(type(exc), exc, exc.__traceback__)
 
     def poll_switches(self):
         if not self.pi.read(self.rotary_encoder_switch):
@@ -381,6 +381,14 @@ class Display:
 
         self._loop.call_later(0.05, self.mainloop)
 
+    def call_later(self, delay, func, *args):
+        """Wrapper around asyncio.get_event_loop().call_later() for screens to use, that automatically cancels the call
+        when the display switches screens.
+        """
+        handle = self._loop.call_later(delay, func, *args)
+        self._screen_local_handles.append(handle)
+        return handle
+
     def show_popup(self, column, text: Union[str, bytes], duration: float, force_color=None):
         if self._screen is not None and self._screen.disallow_popups:
             return False
@@ -410,7 +418,5 @@ class Display:
             handle.cancel()
         self._screen_local_handles.clear()
         self._screen = new_screen
-        result = new_screen.on_switched_to()
-        if inspect.iscoroutine(result):
-            self._screen_local_handles.append(self._loop.create_task(result))
+        self._schedule_if_coro(new_screen.on_switched_to)
 
