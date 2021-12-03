@@ -1,9 +1,12 @@
+import posixpath
 import pprint
+import urllib.parse
 
 from . import Screen, on_button_pressed
 from ..util import Buttons
 from my_aiompd import Client
 import time
+
 
 CUSTOM_CHARACTERS = bytes((
     # Custom char 0 = Play symbol
@@ -81,7 +84,12 @@ class NowPlaying(Screen):
         self._playlist_ver = None
         self._shuffle_state = False
         self._repeat_state = 0
-        self._status = {'random':'0','repeat':'0','single':'0'}
+        self._song_title = None
+        self._song_scroll_callback = None
+        self._playback_time = None   # Will be the amount of time into the song (when paused)
+                                     # or what time.monotonic() was when the song started (when playing)
+        self._state = None
+        self._config = {'text wrap gap':5}
 
     async def on_switched_to(self):
         self.display.lcd.upload_custom_chars(CUSTOM_CHARACTERS)
@@ -95,8 +103,38 @@ class NowPlaying(Screen):
                     await self.on_playlist_change()
 
     async def on_status_change(self):
-        old_status = self._status
-        status = self._status = dict(await self.mpdclient.send_command('status'))
+        status = dict(await self.mpdclient.send_command('status'))
+
+        if status['playlist'] != self._playlist_ver:
+            await self.on_playlist_change()
+            del self._playlist[int(status['playlistlength']):]
+            self._playlist_ver = status['playlist']
+        if 'song' in status:
+            entry: dict = self._playlist[int(status['song'])]
+            if 'Title' in entry:
+                if 'Artist' in entry:
+                    title = f"{entry['Artist']} - {entry['Title']}"
+                else:
+                    title = entry['Title']
+            else:
+                if '://' in entry['file']:
+                    pos = entry['file'].find('#StreamName=')
+                    if pos != -1:
+                        title = urllib.parse.unquote(entry['file'][pos+12:])
+                    else:
+                        title = '[Web Stream]'
+                else:
+                    title = posixpath.splitext(posixpath.basename(entry['file']))[0]
+        else:
+            title = None
+        if title != self._song_title:
+            if self._song_scroll_callback is not None and not self._song_scroll_callback.finished():
+                self._song_scroll_callback.cancel()
+            self._song_scroll_callback = None
+            self._song_title = title
+            if title is not None:
+                self._song_scroll(0)
+
         if status['state'] == 'play':
             duration = float(status['duration'])
             elapsed = float(status['elapsed'])
@@ -109,10 +147,10 @@ class NowPlaying(Screen):
             self.display.write(0, '\x01 %2d:%02d / %d:%02d' % (elapsed // 60, int(elapsed % 60),
                                                                duration // 60, int(duration % 60)))
         elif status['state'] == 'stop':
-            self.display.write(0, '\x02')
+            self.display.write(0, '\x02  Stopped      ')
 
         shuffle_state = status['random'] == '1'
-        repeat_state = 2 if status['single'] == '1' else 1 if status['repeat'] == '1' else 0
+        repeat_state = 0 if status['repeat'] == '0' else 2 if status['single'] == '1' else 1
         if shuffle_state != self._shuffle_state:
             self.display.show_popup(3, 'Shuffle On' if shuffle_state else 'Shuffle Off', 2)
         if repeat_state != self._repeat_state:
@@ -125,18 +163,59 @@ class NowPlaying(Screen):
         self._shuffle_state = shuffle_state
         self._repeat_state = repeat_state
 
-        # if status['playlist'] != self._playlist_ver:
-        #     await self.on_playlist_change()
-        #     del self._playlist[status['playlistlength']:]
-        #     self._playlist_ver = status['playlist']
+
 
     async def on_playlist_change(self):
         if self._playlist_ver is None:
             data = await self.mpdclient.send_command('playlistinfo')
         else:
             data = await self.mpdclient.send_command('plchanges', self._playlist_ver)
-        pprint.pprint(data)
+        item = None
+        for k,v in data:
+            if k == 'file':
+                # The first line of each new entry is always 'file:' so we can use it as a delimiter.
+                if item is not None:
+                    while len(self._playlist) <= item['Pos']:
+                        # pad the playlist with Nones out until we have a slot we can put this item into, in case the
+                        # server sent entries out of order (or in case we're extending the list)
+                        # there shouldn't be any Nones left after we finish.
+                        self._playlist.append(None)
+                    self._playlist[item['Pos']] = item
+                item = {'file':v}
+            else:
+                if k in ('Pos','Id'):
+                    v = int(v)
+                elif k in ('duration',):
+                    v = float(v)
+                item[k] = v
+        # The last item in the list won't have had a file: after it, so the above code won't have put it into the array
+        # item will only be None here if the playlist was empty
+        if item is not None:
+            while len(self._playlist) <= item['Pos']:
+                # pad the playlist with Nones out until we have a slot we can put this item into, in case the
+                # server sent entries out of order (or in case we're extending the list)
+                # there shouldn't be any Nones left after we finish.
+                self._playlist.append(None)
+            self._playlist[item['Pos']] = item
 
+        assert None not in self._playlist
+
+
+    def _song_scroll(self, offset):
+        gap = self._config['text wrap gap']
+        if len(self._song_title) < 16:
+            self.display.write(64, self._song_title.center(16))
+            return
+        text = self._song_title[offset:offset+16]
+        # there's probably a far more efficient way to do this but my brain is not big enough right now
+        if len(text) < 16:
+            more_text = ' '*gap + self._song_title[:16]
+            start_idx = max(0, offset - len(self._song_title))
+            text += more_text[start_idx:start_idx + (16-len(text))]
+        self.display.write(64, text)
+        # TODO make this scroll delay configurable
+        self._song_scroll_callback = self.display.call_later(1.5 if offset == 0 else 0.5, self._song_scroll,
+                                                             (offset + 1) % (len(self._song_title) + gap))
 
     @on_button_pressed(Buttons.PAUSE)
     async def play_pause(self):
