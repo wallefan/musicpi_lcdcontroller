@@ -31,7 +31,7 @@ class LCD:
         self.d5 = d5
         self.d6 = d6
         self.d7 = d7
-        self._enable_delay = 0.001
+        self._enable_delay = 0.000001
 
         # LCD init sequence
         # 00110000 - set 8 bit interface (which we're not using, but the LCD needs to have that set at startup
@@ -77,6 +77,10 @@ class LCD:
         self.backlight_brightness = 1  # 0 to 1 float.
 
         self.lock = asyncio.Lock()
+
+    def __del__(self):
+        self.clear()
+        self.backlight_off()
 
     def set_color(self, hue, saturation):
         """Set the color of the display backlight using HSV.

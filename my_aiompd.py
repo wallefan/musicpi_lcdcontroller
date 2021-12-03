@@ -118,9 +118,10 @@ class Client(asyncio.Protocol):
             # The server isn't supposed to drop connection during an idle command, but on the off-chance it does,
             # we should treat it as though the idle was simply aborted and let the code that requested the idle
             # reconnect.
-            self._response_fut.set_result([])
+            if not self._response_fut.cancelled():
+                self._response_fut.set_result([])
             self._idling = False
-        elif self._response_fut:
+        elif self._response_fut and not self._response_fut.cancelled():
             # if a command was running, cancel it
             self._response_fut.set_exception(exc or ConnectionResetError)
         self._response_fut = None
@@ -146,7 +147,8 @@ class Client(asyncio.Protocol):
                 self._version = line[3:].strip().decode('ascii')
             elif line == b'OK':
                 assert self._response_fut is not None, 'no future waiting'
-                self._response_fut.set_result(self._incoming_response)
+                if not self._response_fut.cancelled():
+                    self._response_fut.set_result(self._incoming_response)
                 self._response_fut = None
                 self._idling = False
                 if self._queue:
@@ -157,7 +159,8 @@ class Client(asyncio.Protocol):
                 return
             elif line.startswith(b'ACK'):
                 assert self._response_fut is not None, 'no future waiting'
-                self._response_fut.set_exception(MPDError(line.decode('utf8')))
+                if not self._response_fut.cancelled():
+                    self._response_fut.set_exception(MPDError(line.decode('utf8')))
                 self._response_fut = None
                 self._idling = False
                 if self._queue:
