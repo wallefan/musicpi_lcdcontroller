@@ -20,14 +20,14 @@ CUSTOM_CHARACTERS = bytes((
     0b11000,
     0b10000,
     # Custom char 1 = Pause symbol
+    0b00000,
     0b01010,
     0b01010,
     0b01010,
     0b01010,
     0b01010,
     0b01010,
-    0b01010,
-    0b01010,
+    0b00000,
     # Custom char 3 = Stop symbol
     0b00000,
     0b11111,
@@ -245,8 +245,16 @@ class NowPlaying(Screen):
         await self.mpdclient.send_command('next')
         await self.on_status_change()
 
+    # Important note here: this decorator does not modify the class namespace.
+    # All this decorator does is flag the function as having an event attached to it, then when the metaclass __init__
+    # runs, it scans the class namespace for functions that have an event flag and puts them in a dictionary.
+    # This means that if two functions have the same name, one will overwrite the other, despite having a decorator
+    # on it that one would expect to store it in some data structure somewhere.
+    # Perhaps I should modify __prepare__() of the metaclass to prepopulate the namespace with events={}, then have the
+    # decorator find the class namespace via sys._getframe().f_back.f_locals and modify that dictionary directly.
+    # I could also have the metaclass __init__ scan the class's MRO for events to add.
     @on_button_pressed(Buttons.PREVIOUS)
-    async def next(self):
+    async def previous(self):
         await self.mpdclient.send_command('previous')
         await self.on_status_change()
 
