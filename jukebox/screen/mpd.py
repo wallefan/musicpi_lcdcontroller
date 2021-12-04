@@ -3,7 +3,7 @@ import posixpath
 import pprint
 import urllib.parse
 
-from . import Screen, on_button_pressed
+from . import Screen, on_button_pressed, on_button_held
 from ..util import Buttons
 from my_aiompd import Client
 import time
@@ -79,8 +79,6 @@ CUSTOM_CHARACTERS = bytes((
 class NowPlaying(Screen):
     def __init__(self, display, next_screen):
         super().__init__(display, next_screen)
-        self._loop = display._loop
-        self.mpdclient = Client('musicpi.local', loop=display._loop)
         self._playlist = []
         self._playlist_ver = None
         self._shuffle_state = False
@@ -103,14 +101,31 @@ class NowPlaying(Screen):
         self._status = None
         await self.on_status_change()
         while True:
-            for subsys in await self.mpdclient.idle('player', 'playlist', 'options'):
+            for subsys in await self.display.mpd_client.idle('player', 'playlist', 'options'):
                 if subsys in ('player', 'options'):
                     await self.on_status_change()
                 elif subsys == 'playlist':
                     await self.on_playlist_change()
 
     async def on_status_change(self):
-        status = self._status = dict(await self.mpdclient.send_command('status'))
+        status = self._status = dict(await self.display.mpd_client.send_command('status'))
+
+        if self._update_timer_callback:
+            self._update_timer_callback.cancel()
+            self._update_timer_callback = None
+        if status['state'] in ('play', 'pause'):
+            duration = float(status['duration']) if 'duration' in status else None
+            elapsed = float(status['elapsed'])
+            self.display.write(0, '%s %2d:%02d / ' % ('\x00' if status['state'] == 'play' else '\x01',
+                                                             elapsed // 60, int(elapsed % 60)) +
+                               ('%d:%02d' % (duration // 60, int(duration % 60)) if duration else '??:??'))
+            if status['state'] == 'play':
+                self._playback_start_time = time.monotonic() - elapsed
+                # arrange for update_timer to be called precisely at the start of the next integer second.
+                # (and kind of just hope that asyncio's clock doesn't drift too terribly much...)
+                self._update_timer_callback = self.display.call_later(1 - elapsed % 1, self._update_timer)
+        elif status['state'] == 'stop':
+            self.display.write(0, '\x02  Stopped      ')
 
         if status['playlist'] != self._playlist_ver:
             await self.on_playlist_change()
@@ -141,23 +156,8 @@ class NowPlaying(Screen):
             self._song_title = title
             if title is not None:
                 self._song_scroll(0)
-
-        if self._update_timer_callback:
-            self._update_timer_callback.cancel()
-            self._update_timer_callback = None
-        if status['state'] in ('play', 'pause'):
-            duration = float(status['duration']) if 'duration' in status else None
-            elapsed = float(status['elapsed'])
-            self.display.write(0, '%s %2d:%02d / ' % ('\x00' if status['state'] == 'play' else '\x01',
-                                                             elapsed // 60, int(elapsed % 60)) +
-                               ('%d:%02d' % (duration // 60, int(duration % 60)) if duration else '??:??'))
-            if status['state'] == 'play':
-                self._playback_start_time = time.monotonic() - elapsed
-                # arrange for update_timer to be called precisely at the start of the next integer second.
-                # (and kind of just hope that asyncio's clock doesn't drift too terribly much...)
-                self._update_timer_callback = self.display.call_later(1 - elapsed % 1, self._update_timer)
-        elif status['state'] == 'stop':
-            self.display.write(0, '\x02  Stopped      ')
+            else:
+                self.display.write(64, ' '*16)
 
         shuffle_state = status['random'] == '1'
         repeat_state = 0 if status['repeat'] == '0' else 2 if status['single'] == '1' else 1
@@ -167,7 +167,7 @@ class NowPlaying(Screen):
             string = ('Repeat Off', 'Repeat All', 'Repeat One')[repeat_state]
             if shuffle_state != self._shuffle_state:
                 # if both things change show the popups sequentially
-                self._loop.call_later(1.9, self.display.show_popup, 3, string, 2)
+                self.display.call_later(1.9, self.display.show_popup, 3, string, 2)
             else:
                 self.display.show_popup(3, string, 2)
         self._shuffle_state = shuffle_state
@@ -175,9 +175,9 @@ class NowPlaying(Screen):
 
     async def on_playlist_change(self):
         if self._playlist_ver is None:
-            data = await self.mpdclient.send_command('playlistinfo')
+            data = await self.display.mpd_client.send_command('playlistinfo')
         else:
-            data = await self.mpdclient.send_command('plchanges', self._playlist_ver)
+            data = await self.display.mpd_client.send_command('plchanges', self._playlist_ver)
         item = None
         for k,v in data:
             if k == 'file':
@@ -234,12 +234,12 @@ class NowPlaying(Screen):
 
     @on_button_pressed(Buttons.PAUSE)
     async def play_pause(self):
-        await self.mpdclient.send_command('pause')
+        await self.display.mpd_client.send_command('pause')
         await self.on_status_change()
 
     @on_button_pressed(Buttons.NEXT)
     async def next(self):
-        await self.mpdclient.send_command('next')
+        await self.display.mpd_client.send_command('next')
         await self.on_status_change()
 
     # Important note here: this decorator does not modify the class namespace.
@@ -252,20 +252,25 @@ class NowPlaying(Screen):
     # I could also have the metaclass __init__ scan the class's MRO for events to add.
     @on_button_pressed(Buttons.PREVIOUS)
     async def previous(self):
-        await self.mpdclient.send_command('previous')
+        await self.display.mpd_client.send_command('previous')
         await self.on_status_change()
 
     @on_button_pressed(Buttons.SHUFFLE)
     async def toggle_shuffle(self):
         new_random = 0 if self._status['random'] == '1' else 1
-        await self.mpdclient.send_command('random', str(new_random))
+        await self.display.mpd_client.send_command('random', str(new_random))
         await self.on_status_change()
+
+    @on_button_held(Buttons.SHUFFLE, 1)
+    async def shuffle(self):
+        await self.display.mpd_client.send_command('shuffle')
+        self.display.show_popup(1, 'Plylst Shuffled', 2)
 
     @on_button_pressed(Buttons.REPEAT)
     async def toggle_repeat(self):
         new_repeat = (self._repeat_state + 1) % 3
-        await self.mpdclient.send_command('repeat', '1' if new_repeat >= 1 else '0')
-        await self.mpdclient.send_command('single', '1' if new_repeat == 2 else '0')
+        await self.display.mpd_client.send_command('repeat', '1' if new_repeat >= 1 else '0')
+        await self.display.mpd_client.send_command('single', '1' if new_repeat == 2 else '0')
         await self.on_status_change()
 
 

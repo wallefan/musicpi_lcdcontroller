@@ -7,6 +7,7 @@ import pigpio
 from pigpio import INPUT, OUTPUT, PUD_UP, EITHER_EDGE
 import asyncio
 
+import my_aiompd
 from .screen import BaseScreen
 from .util import Buttons
 
@@ -78,9 +79,12 @@ class LCD:
 
         self.lock = asyncio.Lock()
 
-    def __del__(self):
+    def shutdown(self):
         self.clear()
         self.backlight_off()
+
+    def __del__(self):
+        self.shutdown()
 
     def set_color(self, hue, saturation):
         """Set the color of the display backlight using HSV.
@@ -213,12 +217,14 @@ class ScreenReservation:
 
 
 class Display:
-    def __init__(self, pi: pigpio.pi, lcd: LCD, rotary_encoder: RotaryEncoder, rotary_switch: int,
+    def __init__(self, pi: pigpio.pi, mpdclient: my_aiompd.Client,
+                 lcd: LCD, rotary_encoder: RotaryEncoder, rotary_switch: int,
                  buttons_adc_channel,
                  adc_spi_channel:int = None,
                  adc_miso: int = None, adc_mosi: int = None, adc_cs: int = None, adc_sck: int = None,
                  loop: asyncio.BaseEventLoop = None):
         self.pi = pi
+        self.mpd_client = mpdclient
         self.lcd = lcd
         if adc_spi_channel is not None:
             self.adc = pi.spi_open(adc_spi_channel, 1000000, pigpio.SPI_MODE_0)
@@ -246,11 +252,15 @@ class Display:
     # if we don't do this, after a few times rerunning the script, pigpiod will run out of resources and stop giving us
     # a new handle, and must be restarted
     # apparently pi.stop() does not do this implicitly
-    def __del__(self):
+    def shutdown(self):
         if self.hwspi:
             self.pi.spi_close(self.adc)
         else:
             self.pi.bb_spi_close(self.adc)
+        self.lcd.shutdown()
+
+    def __del__(self):
+        self.shutdown()
 
     def _adc_read(self, channel):
         assert 0 <= channel <= 7
