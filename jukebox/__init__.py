@@ -245,7 +245,6 @@ class Display:
         self._last_fire_time = None
         self._screen_local_handles = []  # handles (from loop.call_later()) that must be cleared when we switch screens
         self._button_hold_handles = [] # handles (from loop.call_later()) that must be cleared when a button is released
-        self._screen_switch_task = None  # asyncio.Task from Screen.on_switched_to() being a coro
         self._screen_text = bytearray(b' ' * 128)
         self._screen_reservations: list[ScreenReservation] = []
 
@@ -286,7 +285,6 @@ class Display:
     def _report_failure(self, fut: asyncio.Future):
         if not fut.cancelled():
             exc = fut.exception()
-            print(exc)
             if exc:
                 import traceback
                 traceback.print_exception(type(exc), exc, exc.__traceback__)

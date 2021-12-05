@@ -210,7 +210,7 @@ class NowPlaying(Screen):
 
     def _song_scroll(self, offset):
         gap = self._config['text wrap gap']
-        if len(self._song_title) < 16:
+        if len(self._song_title) <= 16:
             self.display.write(64, self._song_title.center(16))
             return
         text = self._song_title[offset:offset+16]
