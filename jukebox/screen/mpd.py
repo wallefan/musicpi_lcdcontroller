@@ -2,6 +2,7 @@ import asyncio
 import posixpath
 import pprint
 import urllib.parse
+from unidecode import unidecode_expect_ascii as unidecode
 
 from . import Screen, on_button_pressed, on_button_held
 from ..util import Buttons
@@ -135,9 +136,9 @@ class NowPlaying(Screen):
             entry: dict = self._playlist[int(status['song'])]
             if 'Title' in entry:
                 if 'Artist' in entry:
-                    title = f"{entry['Artist']} - {entry['Title']}"
+                    title = f"{unidecode(entry['Artist']).strip()} - {unidecode(entry['Title']).strip()}"
                 else:
-                    title = entry['Title']
+                    title = unidecode(entry['Title']).strip()
             else:
                 if '://' in entry['file']:
                     pos = entry['file'].find('#StreamName=')
@@ -147,16 +148,18 @@ class NowPlaying(Screen):
                         title = '[Web Stream]'
                 else:
                     title = posixpath.splitext(posixpath.basename(entry['file']))[0]
+                title = unidecode(title).strip()
         else:
             title = None
         if title != self._song_title:
             if self._song_scroll_callback is not None:
                 self._song_scroll_callback.cancel()
             self._song_scroll_callback = None
-            self._song_title = title
             if title is not None:
+                self._song_title = unidecode(title)
                 self._song_scroll(0)
             else:
+                self._song_title = None
                 self.display.write(64, ' '*16)
 
         shuffle_state = status['random'] == '1'
