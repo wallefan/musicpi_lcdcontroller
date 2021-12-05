@@ -15,13 +15,13 @@ class Clock(Screen):
         self.show_time()
 
     def show_time(self):
-        t = time.localtime()
-        index = (self.twenty_four_hour) << 2 | (self.seconds_shown) << 1 | (self.blinking and t.tm_sec % 1 < 0.5)
+        t = time.time()
+        index = (self.twenty_four_hour) << 2 | (self.seconds_shown) << 1 | (self.blinking and t % 1 < 0.5)
         format = ('%I:%M %p', '%I %M %p', '%I:%M:%S %p', '%I %M %S %p',
                   '%H:%M',    '%H %M',    '%H:%M:%S',    '%H %M %S')[index]
-        string = time.strftime(format, t)
+        string = time.strftime(format)
         self.display.write(0, string.center(16))
-        self.display.call_later(0.5 - t.tm_sec % 0.5, self.show_time)
+        self.display.call_later(0.5 - t % 0.5, self.show_time)
 
     @on_button_pressed(Buttons.PAUSE)
     def toggle_blink(self):
