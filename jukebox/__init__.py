@@ -375,6 +375,7 @@ class Display:
 
 
     def clear(self):
+        self._screen_reservations.clear()
         self.lcd.clear()
         self._screen_text = bytearray(b' ' * 128)
 

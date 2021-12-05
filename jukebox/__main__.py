@@ -2,6 +2,7 @@ from jukebox import Display, RotaryEncoder, LCD
 from jukebox.screen import Screen
 from jukebox.screen.directory import Directory
 from jukebox.screen.mpd import NowPlaying
+from jukebox.screen.clock import Clock
 import pigpio
 import asyncio
 import my_aiompd
@@ -24,15 +25,11 @@ if __name__ == '__main__':
         )
         try:
             main_menu = Directory('Main Menu', display)
-            sub_menu  = Directory('Sub Menu', main_menu)
-            class TestScreen(Screen):
-                def on_switched_to(self):
-                    self.display.lcd.set_color(0.5, 1)
-            test = TestScreen(display, sub_menu)
-            sub_menu.children.append(('Test', test))
             now_playing = NowPlaying(display, main_menu)
             main_menu.children.append(('Now Playing', now_playing))
-            display.switch_screen(now_playing)
+            clock = Clock(display, main_menu)
+            main_menu.children.append(('Clock', clock))
+            display.switch_screen(main_menu)
             display.mainloop()  # run one iteration of the main loop and schedule the next one
             asyncio.get_event_loop().run_forever()
         finally:
