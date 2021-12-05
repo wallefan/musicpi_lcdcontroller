@@ -336,14 +336,14 @@ class Display:
                                 for func in funcs:
                                     self._button_hold_handles.append(self._loop.call_later(event[1],
                                                                                            self._schedule_if_coro, func))
-                else:
-                    if self._pressed_button is not None and self._screen is not None:
-                        for handle in self._button_hold_handles:
-                            # the button is no longer being held; cancel any that were waiting for it to be held longer
-                            handle.cancel()
-                        held_time = time.monotonic() - self._button_pressed_time
-                        for func in self._screen.events.get((self._pressed_button, -1), []):
-                            self._schedule_if_coro(func, held_time)
+            else:
+                if self._pressed_button is not None and self._screen is not None:
+                    for handle in self._button_hold_handles:
+                        # the button is no longer being held; cancel any that were waiting for it to be held longer
+                        handle.cancel()
+                    held_time = time.monotonic() - self._button_pressed_time
+                    for func in self._screen.events.get((self._pressed_button, -1), []):
+                        self._schedule_if_coro(func, held_time)
             self._pressed_button = pressed_button
 
         if self._screen is not None and pressed_button is not None:

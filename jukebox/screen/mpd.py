@@ -155,11 +155,10 @@ class NowPlaying(Screen):
             if self._song_scroll_callback is not None:
                 self._song_scroll_callback.cancel()
             self._song_scroll_callback = None
+            self._song_title = title
             if title is not None:
-                self._song_title = unidecode(title)
                 self._song_scroll(0)
             else:
-                self._song_title = None
                 self.display.write(64, ' '*16)
 
         shuffle_state = status['random'] == '1'
