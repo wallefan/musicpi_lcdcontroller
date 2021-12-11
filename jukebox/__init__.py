@@ -1,6 +1,7 @@
 import colorsys
 import inspect
 import time
+import weakref
 from typing import Union, Tuple
 
 import pigpio
@@ -37,11 +38,11 @@ class LCD:
         # LCD init sequence
         # 00110000 - set 8 bit interface (which we're not using, but the LCD needs to have that set at startup
         # to initialize properly for some reason)
-        pi.write(rs,0)
-        pi.write(d7,0)
-        pi.write(d6,0)
-        pi.write(d5,1)
-        pi.write(d4,1)
+        pi.write(rs, 0)
+        pi.write(d7, 0)
+        pi.write(d6, 0)
+        pi.write(d5, 1)
+        pi.write(d4, 1)
         self._toggle_enable()
         time.sleep(0.005)
         self._toggle_enable()
@@ -70,7 +71,7 @@ class LCD:
         pi.set_PWM_range(bl_red, 1000)
         pi.set_PWM_range(bl_green, 1000)
         pi.set_PWM_range(bl_blue, 1000)
-        
+
         self.bl_red = bl_red
         self.bl_green = bl_green
         self.bl_blue = bl_blue
@@ -145,7 +146,7 @@ class LCD:
         assert 0 <= offset < 8
         assert isinstance(chars, bytes)
         assert len(chars) % 8 == 0, "Custom characters must be in multiples of 8 bytes"
-        self._lcd_write(0x40 + offset*8, False)
+        self._lcd_write(0x40 + offset * 8, False)
         self._lcd_write(chars, True)
 
     def clear(self):
@@ -174,7 +175,7 @@ class RotaryEncoder:
         self._count = 0
         self._pressed_time = None
 
-    def on_transition(self, pin):
+    def on_transition(self, pin, newLevel, tick):
         # The rotary encoder used in this project is quite prone to switch bounce, so this callback (which is called by
         # the hardware on both the rising and falling edge of either pin) may be called many times in response to a
         # single state change.  Further, the delay between this method getting called and it reading the GPIO pins
@@ -190,18 +191,20 @@ class RotaryEncoder:
             if a and b:  # wait for the encoder to settle to (1,1), i.e. one of the tactile notches
                 self._settling = False
             return
-        if a != self._last_a_state:
-            if a ^ b:
+        if pin == self.a:
+            if newLevel ^ self._last_b_state:
                 self._count -= 1
             else:
                 self._count += 1
-        elif b != self._last_b_state:
-            if a ^ b:
+            self._last_a_state = newLevel
+        elif pin  == self.b:
+            if self._last_a_state ^ newLevel:
                 self._count += 1
             else:
                 self._count -= 1
-        self._last_a_state = a
-        self._last_b_state = b
+            self._last_b_state = newLevel
+        #self._last_a_state = a
+        #self._last_b_state = b
         print(self._count)
 
     def get(self):
@@ -220,7 +223,7 @@ class Display:
     def __init__(self, pi: pigpio.pi, mpdclient: my_aiompd.Client,
                  lcd: LCD, rotary_encoder: RotaryEncoder, rotary_switch: int,
                  buttons_adc_channel,
-                 adc_spi_channel:int = None,
+                 adc_spi_channel: int = None,
                  adc_miso: int = None, adc_mosi: int = None, adc_cs: int = None, adc_sck: int = None,
                  loop: asyncio.BaseEventLoop = None):
         self.pi = pi
@@ -243,8 +246,8 @@ class Display:
         self._pressed_button = None
         self._button_pressed_time = None
         self._last_fire_time = None
-        self._screen_local_handles = []  # handles (from loop.call_later()) that must be cleared when we switch screens
-        self._button_hold_handles = [] # handles (from loop.call_later()) that must be cleared when a button is released
+        self._screen_local_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when we switch screens
+        self._button_hold_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when a button is released
         self._screen_text = bytearray(b' ' * 128)
         self._screen_reservations: list[ScreenReservation] = []
 
@@ -279,7 +282,7 @@ class Display:
         result = func(*args)
         if inspect.iscoroutine(result):
             task = self._loop.create_task(result)
-            self._screen_local_handles.append(task)
+            self._screen_local_handles.add(task)
             task.add_done_callback(self._report_failure)
 
     def _report_failure(self, fut: asyncio.Future):
@@ -334,8 +337,8 @@ class Display:
                             # a hold time of -1 means call when the button is released
                             if event[0] == pressed_button and event[1] >= 0:
                                 for func in funcs:
-                                    self._button_hold_handles.append(self._loop.call_later(event[1],
-                                                                                           self._schedule_if_coro, func))
+                                    self._button_hold_handles.add(self._loop.call_later(event[1],
+                                                                                        self._schedule_if_coro, func))
             else:
                 if self._pressed_button is not None and self._screen is not None:
                     for handle in self._button_hold_handles:
@@ -348,6 +351,10 @@ class Display:
 
         if self._screen is not None and pressed_button is not None:
             pass
+
+    @property
+    def encoder_pressed(self):
+        return not self.pi.read(self.rotary_encoder_switch)
 
     def write(self, column, text):
         if isinstance(text, str):
@@ -373,7 +380,6 @@ class Display:
         for split in splits:
             self.lcd.write(column + split.start, text[split])
 
-
     def clear(self):
         self._screen_reservations.clear()
         self.lcd.clear()
@@ -396,10 +402,10 @@ class Display:
 
     def call_later(self, delay, func, *args):
         """Wrapper around asyncio.get_event_loop().call_later() for screens to use, that automatically cancels the call
-        when the display switches screens.
+        if the display switches screens before it would fire.
         """
         handle = self._loop.call_later(delay, func, *args)
-        self._screen_local_handles.append(handle)
+        self._screen_local_handles.add(handle)
         return handle
 
     def show_popup(self, column, text: Union[str, bytes], duration: float, force_color=None):
@@ -433,3 +439,7 @@ class Display:
         self._screen = new_screen
         self._schedule_if_coro(new_screen.on_switched_to)
 
+    def reset_rotary_encoder(self):
+        self.rotary_encoder.reset()
+        for event in self._screen._class_events.get(('encoder',), ()):
+            event.on_reset()
