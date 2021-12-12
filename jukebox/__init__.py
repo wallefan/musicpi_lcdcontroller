@@ -9,7 +9,7 @@ from pigpio import INPUT, OUTPUT, PUD_UP, EITHER_EDGE
 import asyncio
 
 import my_aiompd
-from .screen import BaseScreen
+from .screen import BaseScreen, EncoderTickWatcher
 from .util import Buttons
 
 BACKLIGHT_PWM_HZ = 5000
@@ -178,33 +178,34 @@ class RotaryEncoder:
     def on_transition(self, pin, newLevel, tick):
         # The rotary encoder used in this project is quite prone to switch bounce, so this callback (which is called by
         # the hardware on both the rising and falling edge of either pin) may be called many times in response to a
-        # single state change.  Further, the delay between this method getting called and it reading the GPIO pins
-        # is sufficient that the switch may bounce in that time, and reading the GPIO pins may return the same results
-        # as when they were read last time.
+        # single step of the encoder.  Further, the delay between this method getting called and it reading the GPIO
+        # pins is sufficient that the switch may bounce in that time, and reading the GPIO pins may return the same
+        # results as when they were read last time.
 
         # I could mitigate this by adding a capacitor debounce circuit, but 1) that's effort and 2) that takes perfboard
-        # space I don't have.  This problem really only presents itself when the knob is turned *very* slowly, so
-        # I may just not worry about it and just implement a software fix.
-        a = self.pi.read(self.a)
-        b = self.pi.read(self.b)
+        # space I don't have.  However, since I modified this method not to read the GPIO pins anymore and instead
+        # update its state by the pin and newLevel arguments, since this function is guaranteed to be called exactly
+        # once per pin state transition,  if the pin transitions up and down and up and down repeatedly,
+
+
         if self._settling:
-            if a and b:  # wait for the encoder to settle to (1,1), i.e. one of the tactile notches
+            # wait for the encoder to settle to (1,1), i.e. in one of the tactile notches.
+            # the encoder used for this project counts four pulses for each tactile click.  it is desirable, when the
+            # encoder is reset, to not have it register additional pulses after that until it settles in a notch.
+            if self.pi.read(self.a) and self.pi.read(self.b):
                 self._settling = False
+                self._last_a_state = self._last_b_state = True
             return
+
         if pin == self.a:
-            if newLevel ^ self._last_b_state:
-                self._count -= 1
-            else:
-                self._count += 1
             self._last_a_state = newLevel
         elif pin  == self.b:
-            if self._last_a_state ^ newLevel:
-                self._count += 1
-            else:
-                self._count -= 1
             self._last_b_state = newLevel
-        #self._last_a_state = a
-        #self._last_b_state = b
+
+        if self._last_a_state ^ self._last_b_state ^ (pin == self.a):
+            self._count += 1
+        else:
+            self._count -= 1
         print(self._count)
 
     def get(self):
@@ -245,7 +246,7 @@ class Display:
         self._screen: BaseScreen = None
         self._pressed_button = None
         self._button_pressed_time = None
-        self._last_fire_time = None
+        self._last_encoder_pos = 0
         self._screen_local_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when we switch screens
         self._button_hold_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when a button is released
         self._screen_text = bytearray(b' ' * 128)
@@ -349,8 +350,12 @@ class Display:
                         self._schedule_if_coro(func, held_time)
             self._pressed_button = pressed_button
 
-        if self._screen is not None and pressed_button is not None:
-            pass
+        encoder_pos = self.rotary_encoder.get()
+        if encoder_pos != self._last_encoder_pos:
+            for watcher in self._screen.events.get('encoder',()):
+                watcher: EncoderTickWatcher
+                watcher.on_update(encoder_pos)
+        self._last_encoder_pos = encoder_pos
 
     @property
     def encoder_pressed(self):
@@ -429,7 +434,7 @@ class Display:
         self.lcd.write(column, text)
         self._screen_reservations.append(new_res)
 
-    def switch_screen(self, new_screen: BaseScreen):
+    def switch_screen(self, new_screen: BaseScreen, *args):
         for handle in self._button_hold_handles:
             handle.cancel()
         self._button_hold_handles.clear()
@@ -437,9 +442,10 @@ class Display:
             handle.cancel()
         self._screen_local_handles.clear()
         self._screen = new_screen
-        self._schedule_if_coro(new_screen.on_switched_to)
+        self._schedule_if_coro(new_screen.on_switched_to, *args)
 
     def reset_rotary_encoder(self):
         self.rotary_encoder.reset()
-        for event in self._screen._class_events.get(('encoder',), ()):
+        for event in self._screen.events.get('encoder', ()):
+            event: EncoderTickWatcher
             event.on_reset()
