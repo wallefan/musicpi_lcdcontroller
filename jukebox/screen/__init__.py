@@ -17,11 +17,50 @@ def on_button_released(button:Buttons):
     return on_button_held(button, -1)
 
 
-def on_encoder_tick(n=1):
-    def _wrapper(func):
-        func.__dict__.setdefault('musicpi_trigger_events',[]).append(('encoder', n))
-        return func
-    return _wrapper
+class EncoderTickWatcher:
+    musicpi_trigger_events = ('encoder',)
+    __slots__ = ('func', 'n', 'last_encoder_value')
+    def __init__(self, n, func):
+        self.func = func
+        self.n = n
+        self.last_encoder_value = 0
+
+    def on_update(self, encoder_value):
+        val = (encoder_value - self.last_encoder_value) // self.n
+        if val != 0:
+            self.func(val)
+            # deliberately not setting it directly to the value we were passed, in case we're set to trigger on fours
+            # and the user goes 0 -> 3 -> 5 -> 8, we need to trigger twice.
+            self.last_encoder_value += val * self.n
+
+    def on_reset(self):
+        self.last_encoder_value = 0
+
+    def __call__(self, n):
+        return self.func(n)
+
+class MethodWrapper:
+    def __init__(self, obj, arg):
+        self.obj = obj
+        self.arg = arg
+
+    def __call__(self, *args):
+        return self.obj(self.arg, *args)
+
+    def __getattr__(self, item):
+        return getattr(self.obj, item)
+
+def on_encoder_tick(n):
+    def wrapper(func):
+        # XXX no support for classmethods or staticmethods.  Let's hope we don't need them because implementing them
+        # is going to be a right pain in the rear.
+        # Also this is a very messy hack that I actually consider only one step above Java code.
+        def _method_factory(self):
+            return EncoderTickWatcher(n, types.MethodType(func, self))
+        _method_factory._is_method_factory = True
+        _method_factory.musicpi_trigger_events=('encoder',)
+        return _method_factory
+    return wrapper
 
 
 class ScreenMeta(type):
@@ -43,7 +82,8 @@ class BaseScreen(metaclass=ScreenMeta):
     def __init__(self):
         events = {}
         for k, v in self._class_events.items():
-            events[k] = [types.MethodType(func, self) for func in v]
+            events[k] = [types.MethodType(func, self) if not getattr(func, '_is_method_factory', False)
+                         else func(self) for func in v]
         self.events = events
 
     def on_switched_to(self):
