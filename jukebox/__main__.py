@@ -7,6 +7,7 @@ import pigpio
 import asyncio
 import my_aiompd
 from jukebox.screen.ytsearch import YTSearch
+import time
 
 
 if __name__ == '__main__':
@@ -26,6 +27,14 @@ if __name__ == '__main__':
             config_file_location='config.yml'
         )
         try:
+            display.write(3, 'WELCOME TO')
+            display.write(69, 'MUSICPI')
+            for i in range(512):
+                display.lcd.set_color(i/512,1)
+                time.sleep(1/512)
+            for i in range(512, -1, -1):
+                display.lcd.set_color(0,i/512)
+                time.sleep(1/2048)
             main_menu = Directory('Main Menu', display)
             now_playing = NowPlaying(display, main_menu)
             main_menu.children.append(('Now Playing', now_playing))
