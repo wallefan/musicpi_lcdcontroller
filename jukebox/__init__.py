@@ -12,7 +12,11 @@ import my_aiompd
 from .screen import BaseScreen, EncoderTickWatcher
 from .util import Buttons
 
+import ruamel.yaml
+
 BACKLIGHT_PWM_HZ = 5000
+
+DEFAULTS = {'text scroll time': 0.5, 'text scroll first time': 1.5, 'text scroll gap': 5}
 
 
 class LCD:
@@ -83,9 +87,6 @@ class LCD:
     def shutdown(self):
         self.clear()
         self.backlight_off()
-
-    def __del__(self):
-        self.shutdown()
 
     def set_color(self, hue, saturation):
         """Set the color of the display backlight using HSV.
@@ -187,7 +188,6 @@ class RotaryEncoder:
         # update its state by the pin and newLevel arguments, since this function is guaranteed to be called exactly
         # once per pin state transition,  if the pin transitions up and down and up and down repeatedly,
 
-
         if self._settling:
             # wait for the encoder to settle to (1,1), i.e. in one of the tactile notches.
             # the encoder used for this project counts four pulses for each tactile click.  it is desirable, when the
@@ -224,6 +224,7 @@ class Display:
     def __init__(self, pi: pigpio.pi, mpdclient: my_aiompd.Client,
                  lcd: LCD, rotary_encoder: RotaryEncoder, rotary_switch: int,
                  buttons_adc_channel,
+                 config_file_location,
                  adc_spi_channel: int = None,
                  adc_miso: int = None, adc_mosi: int = None, adc_cs: int = None, adc_sck: int = None,
                  loop: asyncio.BaseEventLoop = None):
@@ -244,26 +245,36 @@ class Display:
         pi.set_pull_up_down(rotary_switch, PUD_UP)
         self._loop = loop or asyncio.get_event_loop()
         self._screen: BaseScreen = None
-        self._pressed_button = None
-        self._button_pressed_time = None
         self._last_encoder_pos = 0
+        self._pressed_button = None
+        self._button_pressed_time = None   # what time.monotonic() was when the button (or encoder switch) was pressed,
+        self._encoder_pressed_time = None  # used for tracking how long it has been held down
         self._screen_local_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when we switch screens
         self._button_hold_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when a button is released
         self._screen_text = bytearray(b' ' * 128)
         self._screen_reservations: list[ScreenReservation] = []
 
+        self._config_location = config_file_location
+        try:
+            with open(config_file_location) as f:
+                self.config = ruamel.yaml.safe_load(f)
+        except (FileNotFoundError, ruamel.yaml.YAMLError):
+            self.config = None
+
+        if self.config is None:
+            self.config = DEFAULTS.copy()
+
     # if we don't do this, after a few times rerunning the script, pigpiod will run out of resources and stop giving us
     # a new handle, and must be restarted
     # apparently pi.stop() does not do this implicitly
     def shutdown(self):
+        with open(self._config_location, 'w') as f:
+            ruamel.yaml.safe_dump(self.config, f)
         if self.hwspi:
             self.pi.spi_close(self.adc)
         else:
             self.pi.bb_spi_close(self.adc)
         self.lcd.shutdown()
-
-    def __del__(self):
-        self.shutdown()
 
     def _adc_read(self, channel):
         assert 0 <= channel <= 7
