@@ -31,10 +31,10 @@ if __name__ == '__main__':
             display.write(69, 'MUSICPI')
             for i in range(512):
                 display.lcd.set_color(i/512,1)
-                time.sleep(1/512)
+                time.sleep(1/128)
             for i in range(512, -1, -1):
                 display.lcd.set_color(0,i/512)
-                time.sleep(1/2048)
+                time.sleep(3/1024)
             main_menu = Directory('Main Menu', display)
             now_playing = NowPlaying(display, main_menu)
             main_menu.children.append(('Now Playing', now_playing))
