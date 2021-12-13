@@ -6,7 +6,7 @@ from jukebox.screen.clock import Clock
 import pigpio
 import asyncio
 import my_aiompd
-from jukebox.screen.text_entry import TextInputScreen
+from jukebox.screen.ytsearch import YTSearch
 
 
 if __name__ == '__main__':
@@ -23,6 +23,7 @@ if __name__ == '__main__':
             rotary_switch=21,
             adc_spi_channel=0,
             buttons_adc_channel=2,
+            config_file_location='config.yml'
         )
         try:
             main_menu = Directory('Main Menu', display)
@@ -30,9 +31,8 @@ if __name__ == '__main__':
             main_menu.children.append(('Now Playing', now_playing))
             clock = Clock(display, main_menu)
             main_menu.children.append(('Clock', clock))
-            test_text_entry = TextInputScreen(display, main_menu, main_menu)
-            display.lcd.set_color(0,0)
-            display.switch_screen(test_text_entry)
+            main_menu.children.append(('YouTube search', YTSearch(display, main_menu, now_playing)))
+            display.switch_screen(main_menu)
             display.mainloop()  # run one iteration of the main loop and schedule the next one
             asyncio.get_event_loop().run_forever()
         finally:

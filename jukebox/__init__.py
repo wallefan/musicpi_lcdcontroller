@@ -251,6 +251,9 @@ class Display:
         self._encoder_pressed_time = None  # used for tracking how long it has been held down
         self._screen_local_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when we switch screens
         self._button_hold_handles = weakref.WeakSet()  # handles (from loop.call_later()) that must be cleared when a button is released
+        # separate from button_hold_handles because although only one of the ADC buttons can be pressed at a time,
+        # the encoder switch is on its own pin and can be pressed and released independent of them
+        self._encoder_hold_handles = weakref.WeakSet()
         self._screen_text = bytearray(b' ' * 128)
         self._screen_reservations: list[ScreenReservation] = []
 
@@ -264,12 +267,13 @@ class Display:
         if self.config is None:
             self.config = DEFAULTS.copy()
 
-    # if we don't do this, after a few times rerunning the script, pigpiod will run out of resources and stop giving us
-    # a new handle, and must be restarted
-    # apparently pi.stop() does not do this implicitly
+
     def shutdown(self):
         with open(self._config_location, 'w') as f:
             ruamel.yaml.safe_dump(self.config, f)
+        # if we don't do this, after a few times rerunning the script, pigpiod will run out of resources
+        # and stop giving us a new handle, and must be restarted
+        # apparently pi.stop() does not do this implicitly
         if self.hwspi:
             self.pi.spi_close(self.adc)
         else:
@@ -307,10 +311,22 @@ class Display:
     def poll_switches(self):
         if not self.pi.read(self.rotary_encoder_switch):
             # rotary knob is pushed in
-            pass
+            if self._encoder_pressed_time is None:
+                self._encoder_pressed_time = time.monotonic()
+                self._encoder_hold_handles.update(self._loop.call_later(event[1], self._schedule_if_coro, func)
+                                                  for event, funcs in self._screen.events.items()
+                                                  if event[0] == Buttons.ENCODER and event[1] >= 0
+                                                  for func in funcs)
         else:
             # rotary is not pressed
-            pass
+            if self._encoder_pressed_time is not None:
+                held_time = time.monotonic() - self._encoder_pressed_time
+                for handle in self._encoder_hold_handles:
+                    handle.cancel()
+                self._encoder_hold_handles.clear()
+                for func in self._screen.events.get((Buttons.ENCODER, -1),()):
+                    self._schedule_if_coro(func, held_time)
+                self._encoder_pressed_time = None
         adc_reading = self._adc_read(self.buttons_channel)
         if adc_reading < 5:
             pressed_button = None
@@ -366,6 +382,11 @@ class Display:
             for watcher in self._screen.events.get('encoder',()):
                 watcher: EncoderTickWatcher
                 watcher.on_update(encoder_pos)
+            # cancel encoder hold events if the encoder is turned, to allow applications to cycle through two different
+            # things depending on whether the encoder is pressed or not.
+            for h in self._encoder_hold_handles:
+                h.cancel()
+            self._encoder_hold_handles.clear()
         self._last_encoder_pos = encoder_pos
 
     @property

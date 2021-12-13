@@ -1,5 +1,5 @@
 from jukebox.util import Buttons
-from . import BaseScreen, on_button_pressed, on_encoder_tick
+from . import BaseScreen, on_button_pressed, on_encoder_tick, on_button_held, on_button_released
 from .. import Display
 
 CHARACTERS = b' abcdefghijklmnopqrstuvwxyz'
@@ -46,10 +46,16 @@ class TextInputScreen(BaseScreen):
         else:
             self.cycle(n)
 
-    @on_button_pressed(Buttons.ENCODER)
     @on_button_pressed(Buttons.NEXT)
     def scroll_right(self):
         self.scroll(1)
+
+    @on_button_released(Buttons.ENCODER)
+    def on_encoder_release(self, held_time):
+        # Do this when the button is released rather than whether it is pressed to avoid adding an extra character
+        # onto the end when the user is holding the encoder in to accept the search.
+        if held_time < 0.5:
+            self.scroll_right()
 
     @on_button_pressed(Buttons.PREVIOUS)
     def scroll_left(self):
@@ -60,6 +66,20 @@ class TextInputScreen(BaseScreen):
         # cycle through starting on the current charset being used (the detected charset)
         self.selected_charset = self.detected_charset = (self.detected_charset + 1) % len(self.charsets)
         self.cycle(0)
+
+    @on_button_pressed(Buttons.PAUSE)
+    @on_button_held(Buttons.ENCODER, 1)
+    def accept(self):
+        # Turn the flashing cursor back off before we switch screens!
+        self.display.lcd._lcd_write(0b1100, False)
+        # pass self.entered_text as an argument to the next screen's on_switched_to()
+        self.display.switch_screen(self.next_screen, self.entered_text)
+
+    @on_button_pressed(Buttons.MODE)
+    def cancel(self):
+        # Turn the flashing cursor back off before we switch screens!
+        self.display.lcd._lcd_write(0b1100, False)
+        self.display.switch_screen(self.cancel_screen)
 
     def cycle(self, n):
         charset = self.charsets[self.detected_charset]
