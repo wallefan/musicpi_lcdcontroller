@@ -39,6 +39,9 @@ class EncoderTickWatcher:
     def __call__(self, n):
         return self.func(n)
 
+    def __get__(self, instance, owner):
+        return EncoderTickWatcher(self.n, types.MethodType(self.func, instance))
+
 class MethodWrapper:
     def __init__(self, obj, arg):
         self.obj = obj
@@ -52,14 +55,7 @@ class MethodWrapper:
 
 def on_encoder_tick(n):
     def wrapper(func):
-        # XXX no support for classmethods or staticmethods.  Let's hope we don't need them because implementing them
-        # is going to be a right pain in the rear.
-        # Also this is a very messy hack that I actually consider only one step above Java code.
-        def _method_factory(self):
-            return EncoderTickWatcher(n, types.MethodType(func, self))
-        _method_factory._is_method_factory = True
-        _method_factory.musicpi_trigger_events=('encoder',)
-        return _method_factory
+        return EncoderTickWatcher(n, func)
     return wrapper
 
 
@@ -82,8 +78,7 @@ class BaseScreen(metaclass=ScreenMeta):
     def __init__(self):
         events = {}
         for k, v in self._class_events.items():
-            events[k] = [types.MethodType(func, self) if not getattr(func, '_is_method_factory', False)
-                         else func(self) for func in v]
+            events[k] = [func.__get__(self, type(self)) for func in v]
         self.events = events
 
     def on_switched_to(self):
