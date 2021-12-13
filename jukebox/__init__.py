@@ -37,7 +37,7 @@ class LCD:
         self.d5 = d5
         self.d6 = d6
         self.d7 = d7
-        self._enable_delay = 0.000001
+        self._enable_delay = 0.0000001
 
         # LCD init sequence
         # 00110000 - set 8 bit interface (which we're not using, but the LCD needs to have that set at startup
@@ -127,6 +127,7 @@ class LCD:
             self.pi.write(self.d6, bool(d & 0x04))
             self.pi.write(self.d7, bool(d & 0x08))
             self._toggle_enable()
+            if not rs: time.sleep(0.000037) # most commands take 37us to complete.  The two that don't (clear and home) are handled elsewhere
 
     def _toggle_enable(self):
         # I'd use asyncio.sleep() here, but asyncio.sleep() probably has more than 100ns of overhead
@@ -152,6 +153,7 @@ class LCD:
 
     def clear(self):
         self._lcd_write(0x01, False)
+        time.sleep(0.0015) # clear command takes 1ms to complete
 
 
 class RotaryEncoder:
