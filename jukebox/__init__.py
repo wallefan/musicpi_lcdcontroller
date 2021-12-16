@@ -447,6 +447,14 @@ class Display:
         self._screen_local_handles.add(handle)
         return handle
 
+    def create_task(self, coro):
+        """Wrapper around asyncio.get_event_loop().create_task() for screens to use, that automatically cancels the
+        coroutine when the display switches screens.
+        """
+        task = self._loop.create_task(coro)
+        self._screen_local_handles.add(task)
+        return task
+
     def show_popup(self, column, text: Union[str, bytes], duration: float, force_color=None):
         if self._screen is not None and self._screen.disallow_popups:
             return False

@@ -1,5 +1,6 @@
 from jukebox import Display, RotaryEncoder, LCD
 from jukebox.screen import Screen
+from jukebox.screen.alarm import AlarmClock
 from jukebox.screen.directory import Directory
 from jukebox.screen.mpd import NowPlaying
 from jukebox.screen.clock import Clock
@@ -41,7 +42,8 @@ if __name__ == '__main__':
             clock = Clock(display, main_menu)
             main_menu.children.append(('Clock', clock))
             main_menu.children.append(('YouTube search', YTSearch(display, main_menu, now_playing)))
-            display.switch_screen(main_menu)
+            main_menu.children.append(('Alarm (beta)', AlarmClock(display, main_menu)))
+            display.switch_screen(AlarmClock(display, main_menu))
             display.mainloop()  # run one iteration of the main loop and schedule the next one
             asyncio.get_event_loop().run_forever()
         finally:
