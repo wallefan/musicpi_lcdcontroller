@@ -67,11 +67,11 @@ class AlarmClock(Screen):
             self.state = 'minute'
         elif self.state == 'minute':
             now = datetime.datetime.now()
-            if now.hour < self.alarm_hour:
+            if now.hour > self.alarm_hour:
                 # if it is currently before the hour set for the alarm, assume the user meant after midnight
                 # and set the alarm for tomorrow.
                 now += datetime.timedelta(days=1)
-            self.alarm_time = now.replace(hour=self.alarm_hour, minute=self.alarm_minute)
+            self.alarm_time = now.replace(hour=self.alarm_hour, minute=self.alarm_minute, second=0)
             self.state = 'alarm'
             self._ts_set_handle.cancel()
             self._ts_now_handle.cancel()
@@ -101,10 +101,11 @@ class AlarmClock(Screen):
             return
 
         delta = self.alarm_time - now
+        self.display.call_later(delta.microseconds/1000000, self.show_countdown)
+
         minutes, seconds = divmod(delta.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         self.display.write(4, '%02d:%02d:%02d' % (hours, minutes, seconds))
-        self.display.call_later((1000000-delta.microseconds)/1000000, self.show_countdown)
 
     async def trigger_alarm(self):
         self.display.write(0,'WAKE UP BITCH!!!')
