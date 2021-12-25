@@ -83,8 +83,8 @@ class AlarmClock(Screen):
                 self._flash_screen_handle.cancel()
                 self._flash_screen_handle = None
             # turn the music off
-            self.display.create_task(self.display.mpd_client.send_command('stop'))
-            self.display.pi.write(12,False)
+            self.display.create_task(self.display.mpd_client.send_command('stop'), persist=True)
+            self.display.pi.write(12, False)
             # turn the screen back on
             self.display.lcd.set_backlight_brightness(1)
             # and return to the previous screen
