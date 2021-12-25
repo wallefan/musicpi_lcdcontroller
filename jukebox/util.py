@@ -1,6 +1,10 @@
 import enum
 
 
+def mpd_quote_string(s):
+    return "'" + s.replace('\\','\\\\').replace('"','\\"').replace()
+
+
 class Buttons(enum.Enum):
     MODE = 'Mode'
     PAUSE = 'Pause/Play'
