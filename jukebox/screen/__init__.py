@@ -86,7 +86,7 @@ class BaseScreen(metaclass=ScreenMeta):
 
 
 class Screen(BaseScreen):
-    def __init__(self, display, next_screen: BaseScreen):
+    def __init__(self, display: 'jukebox.Display', next_screen: BaseScreen):
         super().__init__()
         self.display = display
         self.next_screen = next_screen

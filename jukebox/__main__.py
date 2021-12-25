@@ -12,12 +12,12 @@ import time
 
 
 if __name__ == '__main__':
-    pi = pigpio.pi('musicpi.local')
+    pi = pigpio.pi()
     print('pi connected')
     try:
         display = Display(
             pi,
-            my_aiompd.Client('musicpi.local'),
+            my_aiompd.Client(),
             LCD(pi, d4=24, d5=23, d6=22, d7=27, rs=6, e=5,
                 bl_red=18, bl_green=17, bl_blue=4  # PWM pins for common-anode RGB backlight
                 ),
@@ -43,7 +43,7 @@ if __name__ == '__main__':
             main_menu.children.append(('Clock', clock))
             main_menu.children.append(('YouTube search', YTSearch(display, main_menu, now_playing)))
             main_menu.children.append(('Alarm (beta)', AlarmClock(display, main_menu)))
-            display.switch_screen(AlarmClock(display, main_menu))
+            display.switch_screen(main_menu)
             display.mainloop()  # run one iteration of the main loop and schedule the next one
             asyncio.get_event_loop().run_forever()
         finally:
