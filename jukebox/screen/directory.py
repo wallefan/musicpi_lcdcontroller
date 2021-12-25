@@ -1,7 +1,7 @@
 import asyncio
 
 from .. import Display
-from ..screen import BaseScreen, on_button_pressed
+from ..screen import BaseScreen, on_button_pressed, on_encoder_tick
 from ..util import Buttons
 import time
 
@@ -29,6 +29,11 @@ class Directory(BaseScreen):
     @on_button_pressed(Buttons.NEXT)
     def move_next(self):
         self.cursor += 1
+        self.show()
+
+    @on_encoder_tick(4)
+    def move(self, n):
+        self.cursor += n
         self.show()
 
     @on_button_pressed(Buttons.PAUSE)
