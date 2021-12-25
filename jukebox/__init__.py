@@ -83,6 +83,7 @@ class LCD:
         self.backlight_brightness = 1  # 0 to 1 float.
 
         self.lock = asyncio.Lock()
+        self._last_color = (0,1)  # white
 
     def shutdown(self):
         self.clear()
@@ -94,16 +95,18 @@ class LCD:
         # The backlight is a 3-wire RGB LED with common anode, which I have wired to the Pi's 3.3V rail.
         # Therefore, outputting a solid on signal (3.3V) will turn the color completely off, and a solid off signal (0V)
         # will sink current through the Pi and turn the LED on.
+        self._last_color = (hue, saturation)
         r, g, b = colorsys.hsv_to_rgb(hue, saturation, self.backlight_brightness)
         self.pi.set_PWM_dutycycle(self.bl_red,   1000 - r * 1000)
         self.pi.set_PWM_dutycycle(self.bl_green, 1000 - g * 1000)
         self.pi.set_PWM_dutycycle(self.bl_blue,  1000 - b * 1000)
 
     def set_backlight_brightness(self, brightness):
-        """Change the backlight brightness.  This will not take effect until the next time set_color() is invoked.
+        """Change the backlight brightness.
         """
         # XXX decide whether to fix the fact that this will not take effect until the next time set_color is invoked.
         self.backlight_brightness = brightness
+        self.set_color(*self._last_color)
 
     def backlight_off(self):
         self.pi.set_PWM_dutycycle(self.bl_red, 1000)
@@ -447,12 +450,13 @@ class Display:
         self._screen_local_handles.add(handle)
         return handle
 
-    def create_task(self, coro):
+    def create_task(self, coro, *, persist=False):
         """Wrapper around asyncio.get_event_loop().create_task() for screens to use, that automatically cancels the
         coroutine when the display switches screens.
         """
         task = self._loop.create_task(coro)
-        self._screen_local_handles.add(task)
+        if not persist:
+            self._screen_local_handles.add(task)
         return task
 
     def show_popup(self, column, text: Union[str, bytes], duration: float, force_color=None):
